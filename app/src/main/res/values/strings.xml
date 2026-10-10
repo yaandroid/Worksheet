@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">BRAHM Office</string>
+    <string name="open_with_brahm">Open with BRAHM Office</string>
+    <string name="company">Brahm InnerBrain Technologies Pvt. Ltd.</string>
+    <string name="developed_by">Developed by Sandeep Kushwah</string>
+    <string name="tab_recent">Recent</string>
+    <string name="tab_all">All files</string>
+    <string name="tab_tools">Tools</string>
+    <string name="search_hint">Search files…</string>
+    <string name="no_files">No documents yet. Open a PDF, Excel, Word or PPT to get started.</string>
+    <string name="grant_access">Grant file access</string>
+</resources>

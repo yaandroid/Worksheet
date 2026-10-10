@@ -1,0 +1,21 @@
+<resources>
+    <color name="brahm_navy">#16233F</color>
+    <color name="brahm_navy_dark">#0E1830</color>
+    <color name="brahm_saffron">#E8A33D</color>
+    <color name="pdf_red">#D64541</color>
+    <color name="excel_green">#1F9D63</color>
+    <color name="word_blue">#2B579A</color>
+    <color name="ppt_orange">#D24726</color>
+
+    <color name="bg_light">#F6F7F9</color>
+    <color name="surface_light">#FFFFFF</color>
+    <color name="text_light">#16233F</color>
+    <color name="text_muted_light">#5B6472</color>
+
+    <color name="bg_dark">#0E1117</color>
+    <color name="surface_dark">#1A1F29</color>
+    <color name="text_dark">#ECEFF4</color>
+    <color name="text_muted_dark">#9AA3B2</color>
+
+    <color name="white">#FFFFFF</color>
+</resources>

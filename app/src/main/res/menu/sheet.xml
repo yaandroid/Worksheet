@@ -1,0 +1,5 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item android:id="@+id/action_save_xlsx" android:title="Save as .xlsx" app:showAsAction="never"/>
+    <item android:id="@+id/action_save_csv" android:title="Save as .csv" app:showAsAction="never"/>
+</menu>

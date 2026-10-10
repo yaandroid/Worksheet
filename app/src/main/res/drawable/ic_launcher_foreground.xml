@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BRAHM Office launcher foreground: PDF doc (red) + Excel grid (green) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- PDF document, left -->
+    <path android:fillColor="#D64541"
+        android:pathData="M34,34 h20 a3,3 0 0 1 3,3 v34 a3,3 0 0 1 -3,3 h-20 a3,3 0 0 1 -3,-3 v-34 a3,3 0 0 1 3,-3 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M36,64 h16 v3 h-16 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M36,58 h16 v3 h-16 z" />
+
+    <!-- Excel grid, right, overlapping -->
+    <path android:fillColor="#1F9D63"
+        android:pathData="M54,42 h22 a3,3 0 0 1 3,3 v26 a3,3 0 0 1 -3,3 h-22 a3,3 0 0 1 -3,-3 v-26 a3,3 0 0 1 3,-3 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M51,52 h28 v2 h-28 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M51,61 h28 v2 h-28 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M60,43 h2 v30 h-2 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M69,43 h2 v30 h-2 z" />
+</vector>

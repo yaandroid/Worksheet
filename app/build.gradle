@@ -1,0 +1,77 @@
+// BRAHM Office — app module
+// Brahm InnerBrain Technologies Pvt. Ltd. — Developed by Sandeep Kushwah
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.brahm.office'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.brahm.office"
+        minSdk 24
+        targetSdk 35
+        versionCode 1          // internal — may bump silently so updates install
+        versionName "1.1"      // visible — stays 1.1 unless Sandeep says to bump
+        vectorDrawables { useSupportLibrary true }
+    }
+
+    signingConfigs {
+        release {
+            // Filled by CI / local keystore. Falls back to debug signing if absent.
+            storeFile file(System.getenv("BRAHM_KEYSTORE") ?: "brahm-release.jks")
+            storePassword System.getenv("BRAHM_KS_PASS") ?: "brahm2026"
+            keyAlias System.getenv("BRAHM_KEY_ALIAS") ?: "brahm"
+            keyPassword System.getenv("BRAHM_KEY_PASS") ?: "brahm2026"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+    }
+
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+    buildFeatures { viewBinding true }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/*.kotlin_module']
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.15.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'androidx.activity:activity-ktx:1.9.3'
+
+    // PDF editing (pure-Java, no NDK): PdfBox-Android
+    implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+
+    // xlsx read/write (pure-Java, no java.awt): fastexcel
+    implementation 'org.dhatim:fastexcel:0.18.4'
+    implementation 'org.dhatim:fastexcel-reader:0.18.4'
+
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.3'
+}

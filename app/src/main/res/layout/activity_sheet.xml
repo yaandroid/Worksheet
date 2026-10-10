@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/brahm_navy"
+        app:navigationIcon="@drawable/ic_back"
+        app:titleTextColor="@color/white" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@color/surface_light"
+        android:padding="6dp"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/cellRef"
+            android:layout_width="64dp"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="A1"
+            android:textStyle="bold"
+            android:textColor="@color/brahm_navy"
+            android:background="#EEF1F5"
+            android:paddingVertical="8dp" />
+
+        <EditText
+            android:id="@+id/formulaInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:hint="Enter value or =formula"
+            android:imeOptions="actionDone"
+            android:inputType="text|textNoSuggestions"
+            android:maxLines="1"
+            android:textColor="@color/text_light" />
+
+        <Button
+            android:id="@+id/applyBtn"
+            style="?attr/materialButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:text="✓" />
+    </LinearLayout>
+
+    <com.brahm.office.sheet.SpreadsheetView
+        android:id="@+id/grid"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>
