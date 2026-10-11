@@ -16,14 +16,26 @@ jobs:
           java-version: '17'
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+      - name: Generate signing keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore brahm-release.jks \
+            -alias brahm -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass brahm2026 -keypass brahm2026 \
+            -dname "CN=BRAHM Office, O=Brahm InnerBrain Technologies, L=Ahmedabad, C=IN"
       - name: Build release APK
+        env:
+          BRAHM_KEYSTORE: ${{ github.workspace }}/brahm-release.jks
+          BRAHM_KS_PASS: brahm2026
+          BRAHM_KEY_ALIAS: brahm
+          BRAHM_KEY_PASS: brahm2026
         run: |
           chmod +x ./gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
-      - name: Rename APK
+      - name: Collect APK
         run: |
           mkdir -p out
-          cp $(find app/build/outputs/apk/release -name "*.apk" | head -1) out/BRAHM-Office-1.1.apk
+          cp "$(find app/build/outputs/apk/release -name '*.apk' | head -1)" out/BRAHM-Office-1.1.apk
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
