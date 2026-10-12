@@ -48,6 +48,22 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { openUri(it) } }
 
+    // Folder picker — grants persistent access to list ALL files in a folder.
+    private val openTree = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
+            com.brahm.office.util.TreeRepo.saveTree(this, uri)
+            tab = 1
+            reload()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -66,8 +82,10 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
 
-        // Tapping the empty-state message opens the file picker.
-        empty.setOnClickListener { pickFile() }
+        // Tapping the empty-state: on "All files" tab pick a folder, else open a file.
+        empty.setOnClickListener {
+            if (tab == 1 && !hasFullAccess()) chooseFolder() else pickFile()
+        }
 
         findViewById<TabLayout>(R.id.tabs).addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(t: TabLayout.Tab) { tab = t.position; refresh() }
@@ -97,6 +115,7 @@ class MainActivity : AppCompatActivity() {
         when (item.itemId) {
             R.id.action_open -> pickFile()
             R.id.action_new_sheet -> startActivity(Intent(this, SheetActivity::class.java))
+            R.id.action_choose_folder -> chooseFolder()
             R.id.action_all_files -> requestAllFilesAccess()
         }
         return super.onOptionsItemSelected(item)
@@ -116,6 +135,13 @@ class MainActivity : AppCompatActivity() {
             "application/octet-stream", "*/*"
         )
         try { openDoc.launch(types) } catch (e: Exception) { openDoc.launch(arrayOf("*/*")) }
+    }
+
+    private fun hasFullAccess(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()
+
+    private fun chooseFolder() {
+        try { openTree.launch(null) } catch (e: Exception) {}
     }
 
     /** Only when the user explicitly chooses it from the menu. */
@@ -166,12 +192,17 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var scanning = false
 
     private fun reload() {
-        if (tab != 1) { if (tab != 2) refresh(); return }   // only the "All files" tab scans
+        if (tab != 1) { refresh(); return }   // only the "All files" tab scans
+        val tree = com.brahm.office.util.TreeRepo.getTree(this)
+        if (!hasFullAccess() && tree == null) { refresh(); return }  // show "choose folder" prompt
         if (scanning) return
         scanning = true
-        if (all.isEmpty()) { empty.visibility = View.VISIBLE; empty.text = "Scanning files…" }
+        if (all.isEmpty()) { empty.visibility = View.VISIBLE; empty.text = "Loading files…" }
         Thread {
-            val result = try { FileRepo.scan(this) } catch (e: Exception) { emptyList() }
+            val result = try {
+                if (hasFullAccess()) FileRepo.scan(this)
+                else com.brahm.office.util.TreeRepo.scan(this, tree!!)
+            } catch (e: Exception) { emptyList() }
             runOnUiThread { all = result; scanning = false; refresh() }
         }.start()
     }
@@ -200,18 +231,20 @@ class MainActivity : AppCompatActivity() {
                 empty.visibility = if (none) View.VISIBLE else View.GONE
                 if (none) empty.text = "No recent files yet.\n\nTap here to open a PDF, Excel, Word or PPT — or open one from your file manager."
             }
-            else -> {
+            else -> {   // All files
                 adapter.submit(filtered)
                 val none = filtered.isEmpty()
                 empty.visibility = if (none) View.VISIBLE else View.GONE
-                if (none) empty.text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager())
-                    "To list all files here, enable “All files access” from the ⋮ menu.\n\nOr just tap here to open a file directly (no permission needed)."
-                else "No documents found.\n\nTap here to open a file."
+                val tree = com.brahm.office.util.TreeRepo.getTree(this)
+                if (none) empty.text = if (!hasFullAccess() && tree == null)
+                    "To list all your files here, tap to choose a folder\n(e.g. Download or Documents).\n\nYou pick it once — then every file in it shows up here, no permission needed."
+                else "No documents found in the selected folder.\n\nTap to choose a different folder."
             }
         }
     }
 
     private fun open(f: FileItem) {
+        if (f.path.startsWith("content://")) { openUri(Uri.parse(f.path)); return }
         Recents.add(this, f.path)
         routeFile(f.path, f.type)
     }
