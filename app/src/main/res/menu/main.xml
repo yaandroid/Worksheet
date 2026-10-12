@@ -1,0 +1,6 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item android:id="@+id/action_open" android:title="Open file" app:showAsAction="ifRoom|withText"/>
+    <item android:id="@+id/action_new_sheet" android:title="New sheet" app:showAsAction="never"/>
+    <item android:id="@+id/action_all_files" android:title="Enable All files access" app:showAsAction="never"/>
+</menu>

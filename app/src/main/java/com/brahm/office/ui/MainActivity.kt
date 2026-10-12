@@ -7,9 +7,12 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,13 +38,21 @@ class MainActivity : AppCompatActivity() {
     private var query = ""
     private var all: List<FileItem> = emptyList()
 
+    // Permission is OPTIONAL now — only used to populate the "All files" tab.
     private val permLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { reload() }
 
+    // System file picker — needs NO storage permission, works on every device.
+    private val openDoc = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { openUri(it) } }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        setSupportActionBar(findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar))
 
         empty = findViewById(R.id.empty)
         val list = findViewById<RecyclerView>(R.id.list)
@@ -55,13 +66,21 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
 
+        // Tapping the empty-state message opens the file picker.
+        empty.setOnClickListener { pickFile() }
+
         findViewById<TabLayout>(R.id.tabs).addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(t: TabLayout.Tab) { tab = t.position; refresh() }
             override fun onTabUnselected(t: TabLayout.Tab) {}
             override fun onTabReselected(t: TabLayout.Tab) {}
         })
 
-        ensureAccess()
+        // No forced redirect to settings. On old Android just ask for read (harmless).
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+            != PackageManager.PERMISSION_GRANTED) {
+            permLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
     }
 
     override fun onResume() {
@@ -69,75 +88,140 @@ class MainActivity : AppCompatActivity() {
         reload()
     }
 
-    private fun ensureAccess() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                try {
-                    val i = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                        Uri.parse("package:$packageName"))
-                    startActivity(i)
-                } catch (e: Exception) {
-                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                }
-            }
-        } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED) {
-                permLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.action_open -> pickFile()
+            R.id.action_new_sheet -> startActivity(Intent(this, SheetActivity::class.java))
+            R.id.action_all_files -> requestAllFilesAccess()
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
+    private fun pickFile() {
+        val types = arrayOf(
+            "application/pdf",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "text/csv", "text/comma-separated-values",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "text/plain",
+            "application/octet-stream", "*/*"
+        )
+        try { openDoc.launch(types) } catch (e: Exception) { openDoc.launch(arrayOf("*/*")) }
+    }
+
+    /** Only when the user explicitly chooses it from the menu. */
+    private fun requestAllFilesAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:$packageName")))
+            } catch (e: Exception) {
+                try { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) } catch (_: Exception) {}
             }
         }
+    }
+
+    /** Copy a picked content Uri into cache and open the right screen. */
+    private fun openUri(uri: Uri) {
+        try {
+            val name = queryName(uri)
+            val out = File(cacheDir, name)
+            contentResolver.openInputStream(uri)?.use { input ->
+                out.outputStream().use { input.copyTo(it) }
+            }
+            Recents.add(this, out.absolutePath)
+            routeFile(out.absolutePath, DocType.fromName(name))
+        } catch (e: Exception) {
+            empty.visibility = View.VISIBLE
+            empty.text = "Could not open that file. Try another."
+        }
+    }
+
+    private fun queryName(uri: Uri): String {
+        var name = "document"
+        try {
+            contentResolver.query(uri, null, null, null, null)?.use { c ->
+                val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && c.moveToFirst()) name = c.getString(idx)
+            }
+        } catch (_: Exception) {}
+        if (!name.contains('.')) {
+            name += when (DocType.fromMime(contentResolver.getType(uri))) {
+                DocType.PDF -> ".pdf"; DocType.EXCEL -> ".xlsx"; DocType.WORD -> ".docx"
+                DocType.PPT -> ".pptx"; DocType.CSV -> ".csv"; else -> ".txt"
+            }
+        }
+        return name
     }
 
     @Volatile private var scanning = false
 
     private fun reload() {
+        if (tab != 1) { if (tab != 2) refresh(); return }   // only the "All files" tab scans
         if (scanning) return
         scanning = true
-        if (all.isEmpty() && tab != 2) { empty.visibility = View.VISIBLE; empty.text = "Scanning files…" }
-        // Scan storage OFF the main thread to avoid ANR/hang.
+        if (all.isEmpty()) { empty.visibility = View.VISIBLE; empty.text = "Scanning files…" }
         Thread {
             val result = try { FileRepo.scan(this) } catch (e: Exception) { emptyList() }
-            runOnUiThread {
-                all = result
-                scanning = false
-                refresh()
-            }
+            runOnUiThread { all = result; scanning = false; refresh() }
         }.start()
     }
 
     private fun refresh() {
         val base = when (tab) {
-            0 -> {   // Recent
-                val recent = Recents.get(this)
-                recent.mapNotNull { p ->
-                    val f = File(p)
-                    if (f.exists()) FileItem(f.name, p, f.length(), f.lastModified(), DocType.fromName(f.name)) else null
-                }
+            0 -> Recents.get(this).mapNotNull { p ->
+                val f = File(p)
+                if (f.exists()) FileItem(f.name, p, f.length(), f.lastModified(), DocType.fromName(f.name)) else null
             }
-            2 -> emptyList()      // Tools tab -> show tools grid instead
+            2 -> emptyList()
             else -> all
         }
         val filtered = if (query.isBlank()) base
             else base.filter { it.name.lowercase().contains(query.lowercase()) }
 
-        if (tab == 2) {
-            adapter.submit(emptyList())
-            empty.visibility = View.VISIBLE
-            empty.text = "Tools:\n\n• Merge PDFs\n• Split PDF\n• PDF → images\n• Images → PDF\n• Compress PDF\n• Encrypt / decrypt\n\nOpen any PDF, then use the editor toolbar."
-        } else {
-            adapter.submit(filtered)
-            empty.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
-            if (filtered.isEmpty()) empty.setText(R.string.no_files)
+        when (tab) {
+            2 -> {
+                adapter.submit(emptyList())
+                empty.visibility = View.VISIBLE
+                empty.text = "PDF tools — open any PDF, then use the toolbar:\n\n• Merge  • Split  • Rotate\n• Delete page  • Extract range\n• Encrypt / decrypt  • Extract text\n\nTap here to open a file."
+            }
+            0 -> {
+                adapter.submit(filtered)
+                val none = filtered.isEmpty()
+                empty.visibility = if (none) View.VISIBLE else View.GONE
+                if (none) empty.text = "No recent files yet.\n\nTap here to open a PDF, Excel, Word or PPT — or open one from your file manager."
+            }
+            else -> {
+                adapter.submit(filtered)
+                val none = filtered.isEmpty()
+                empty.visibility = if (none) View.VISIBLE else View.GONE
+                if (none) empty.text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager())
+                    "To list all files here, enable “All files access” from the ⋮ menu.\n\nOr just tap here to open a file directly (no permission needed)."
+                else "No documents found.\n\nTap here to open a file."
+            }
         }
     }
 
     private fun open(f: FileItem) {
         Recents.add(this, f.path)
-        when (f.type) {
+        routeFile(f.path, f.type)
+    }
+
+    private fun routeFile(path: String, type: DocType) {
+        when (type) {
             DocType.EXCEL, DocType.CSV ->
-                startActivity(Intent(this, SheetActivity::class.java).putExtra("path", f.path))
+                startActivity(Intent(this, SheetActivity::class.java).putExtra("path", path))
             else ->
-                startActivity(Intent(this, ViewerActivity::class.java).putExtra("path", f.path))
+                startActivity(Intent(this, ViewerActivity::class.java).putExtra("path", path))
         }
     }
 }
