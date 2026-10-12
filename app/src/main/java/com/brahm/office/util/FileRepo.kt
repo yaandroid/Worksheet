@@ -25,12 +25,17 @@ object FileRepo {
         return out.values.sortedByDescending { it.modified }
     }
 
+    private const val MAX_RESULTS = 3000
+    private val skipDirs = setOf("Android", "Download/.", "LOST.DIR", ".thumbnails")
+
     private fun walk(dir: File, out: MutableMap<String, FileItem>, q: String, depth: Int) {
-        if (depth > 6) return
+        if (depth > 6 || out.size >= MAX_RESULTS) return
         val children = dir.listFiles() ?: return
         for (f in children) {
+            if (out.size >= MAX_RESULTS) return
             if (f.isHidden) continue
             if (f.isDirectory) {
+                if (f.name in skipDirs) continue   // skip heavy/system dirs
                 walk(f, out, q, depth + 1)
             } else {
                 val ext = f.extension.lowercase()

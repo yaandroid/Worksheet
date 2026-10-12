@@ -88,9 +88,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @Volatile private var scanning = false
+
     private fun reload() {
-        all = try { FileRepo.scan(this) } catch (e: Exception) { emptyList() }
-        refresh()
+        if (scanning) return
+        scanning = true
+        if (all.isEmpty() && tab != 2) { empty.visibility = View.VISIBLE; empty.text = "Scanning files…" }
+        // Scan storage OFF the main thread to avoid ANR/hang.
+        Thread {
+            val result = try { FileRepo.scan(this) } catch (e: Exception) { emptyList() }
+            runOnUiThread {
+                all = result
+                scanning = false
+                refresh()
+            }
+        }.start()
     }
 
     private fun refresh() {
