@@ -68,10 +68,23 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        setSupportActionBar(findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar))
+        val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
 
         empty = findViewById(R.id.empty)
         val list = findViewById<RecyclerView>(R.id.list)
+
+        // Clear status bar / nav bar (edge-to-edge on Android 15).
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(toolbar) { v, insets ->
+            val b = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(v.paddingLeft, b.top, v.paddingRight, 0)
+            insets
+        }
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(list) { v, insets ->
+            val b = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, b.bottom)
+            insets
+        }
         list.layoutManager = LinearLayoutManager(this)
         adapter = FileAdapter(emptyList()) { open(it) }
         list.adapter = adapter

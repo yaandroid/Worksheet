@@ -26,3 +26,15 @@ body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(-
 .sheettabs{display:flex;gap:4px;align-items:center}
 .sheettab{background:#24324f;color:#fff;border-radius:6px 6px 0 0;padding:4px 12px;font-size:12px;cursor:pointer}
 .sheettab.active{background:var(--saffron);color:#2a1d00;font-weight:600}
+
+/* ---- Android phone UI fixes ---- */
+.topbar{flex-wrap:wrap;row-gap:6px;padding:8px 10px;align-items:center}
+.topbar .btn{padding:6px 10px;font-size:12px;line-height:1.1}
+.brand{font-size:15px;margin-right:4px}
+.brand .logo{width:20px;height:20px}
+.cellref{width:58px;font-size:13px}
+#finput{font-size:14px}
+.statusbar{font-size:10px}
+.sheettab{font-size:11px;padding:4px 10px}
+body{overflow-x:hidden}
+.topbar .spacer{display:none}

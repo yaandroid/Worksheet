@@ -44,6 +44,14 @@ class DocActivity : AppCompatActivity() {
         web = WebView(this)
         setContentView(web)
 
+        // Keep content clear of the status bar / navigation bar (edge-to-edge on Android 15).
+        web.setBackgroundColor(0xFF16233F.toInt())
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(web) { v, insets ->
+            val b = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(0, b.top, 0, b.bottom)
+            insets
+        }
+
         // Android 15 (targetSdk 35) draws edge-to-edge: pad the WebView by the
         // system bar insets so the UI never sits under the status / nav bars.
         web.setBackgroundColor(0xFF16233F.toInt())  // navy — matches top & bottom bars
