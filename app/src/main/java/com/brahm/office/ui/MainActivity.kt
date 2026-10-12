@@ -114,7 +114,7 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
             R.id.action_open -> pickFile()
-            R.id.action_new_sheet -> startActivity(Intent(this, SheetActivity::class.java))
+            R.id.action_new_sheet -> startActivity(Intent(this, DocActivity::class.java))
             R.id.action_choose_folder -> chooseFolder()
             R.id.action_all_files -> requestAllFilesAccess()
         }
@@ -250,11 +250,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun routeFile(path: String, type: DocType) {
-        when (type) {
-            DocType.EXCEL, DocType.CSV ->
-                startActivity(Intent(this, SheetActivity::class.java).putExtra("path", path))
-            else ->
-                startActivity(Intent(this, ViewerActivity::class.java).putExtra("path", path))
-        }
+        // Single unified surface (WebView engine): opens PDF, Excel, CSV, Word/PPT, HTML, MD, TXT.
+        startActivity(Intent(this, DocActivity::class.java).putExtra("path", path))
     }
 }

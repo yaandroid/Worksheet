@@ -1,0 +1,26 @@
+:root{--navy:#16233F;--navy2:#0E1117;--saffron:#E8A33D;--green:#1F9D63;--red:#D64541;
+  --bg:#0E1117;--panel:#1A1F29;--line:#2A3240;--txt:#ECEFF4;--muted:#9AA3B2;--white:#fff;}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--txt);display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:var(--navy);display:flex;align-items:center;gap:8px;padding:8px 12px;flex:0 0 auto}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;color:#fff;margin-right:10px}
+.brand .logo{width:22px;height:22px;border-radius:5px;background:linear-gradient(135deg,var(--red) 50%,var(--green) 50%)}
+.btn{background:#24324f;color:#fff;border:1px solid #2f4063;border-radius:7px;padding:7px 12px;font-size:13px;cursor:pointer}
+.btn:hover{background:#2d3e61}
+.btn.accent{background:var(--saffron);color:#2a1d00;border-color:var(--saffron);font-weight:600}
+.spacer{flex:1}
+.tag{font-size:11px;color:#b8c2d4}
+.formulabar{display:flex;align-items:center;gap:8px;background:var(--panel);border-bottom:1px solid var(--line);padding:6px 10px;flex:0 0 auto}
+.cellref{width:70px;text-align:center;font-weight:700;color:var(--saffron);background:#11161f;border:1px solid var(--line);border-radius:6px;padding:7px 4px}
+#finput{flex:1;background:#11161f;border:1px solid var(--line);border-radius:6px;color:var(--txt);padding:8px 10px;font-size:14px;outline:none}
+#finput:focus{border-color:var(--saffron)}
+.stage{flex:1;position:relative;overflow:hidden}
+#grid{display:block;width:100%;height:100%}
+#pdfwrap{position:absolute;inset:0;display:none;background:#333}
+#pdfwrap iframe,#pdfwrap embed{width:100%;height:100%;border:0}
+.hidden{display:none!important}
+.statusbar{flex:0 0 auto;background:var(--navy);color:#b8c2d4;font-size:11px;padding:4px 12px;display:flex;justify-content:space-between}
+.sheettabs{display:flex;gap:4px;align-items:center}
+.sheettab{background:#24324f;color:#fff;border-radius:6px 6px 0 0;padding:4px 12px;font-size:12px;cursor:pointer}
+.sheettab.active{background:var(--saffron);color:#2a1d00;font-weight:600}

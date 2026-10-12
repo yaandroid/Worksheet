@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- BRAHM Office — Brahm InnerBrain Technologies Pvt. Ltd. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
     <application
         android:name=".OfficeApp"
@@ -14,7 +17,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:requestLegacyExternalStorage="true"
+        android:usesCleartextTraffic="false"
+        android:hardwareAccelerated="true"
         android:theme="@style/Theme.BrahmOffice">
 
         <!-- Home / file browser -->
@@ -28,14 +32,15 @@
             </intent-filter>
         </activity>
 
-        <!-- Document opener: shows in "Open with" + Share for every format -->
+        <!-- Unified document surface (WebView engine): opens everything -->
         <activity
-            android:name=".ui.ViewerActivity"
+            android:name=".ui.DocActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:label="@string/app_name">
 
-            <!-- VIEW by extension + mime -->
+            <!-- VIEW by mime type -->
             <intent-filter android:label="@string/open_with_brahm">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -51,9 +56,12 @@
                 <data android:mimeType="application/vnd.ms-powerpoint" />
                 <data android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation" />
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="text/html" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/*" />
             </intent-filter>
 
-            <!-- VIEW by file extension when mime is generic -->
+            <!-- VIEW by file extension (when the mime is generic) -->
             <intent-filter android:label="@string/open_with_brahm">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -71,6 +79,10 @@
                 <data android:pathPattern=".*\\.ppt" />
                 <data android:pathPattern=".*\\.pptx" />
                 <data android:pathPattern=".*\\.txt" />
+                <data android:pathPattern=".*\\.md" />
+                <data android:pathPattern=".*\\.markdown" />
+                <data android:pathPattern=".*\\.html" />
+                <data android:pathPattern=".*\\.htm" />
             </intent-filter>
 
             <!-- SEND (share sheet) -->
@@ -85,13 +97,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Spreadsheet editor -->
-        <activity
-            android:name=".ui.SheetActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
-
-        <!-- FileProvider for sharing out saved/exported files -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
