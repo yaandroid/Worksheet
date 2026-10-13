@@ -7,7 +7,15 @@
 <link rel="stylesheet" href="styles.css">
 <style>
   .pdfview{position:absolute;inset:0;display:none;overflow:auto;background:#444;-webkit-overflow-scrolling:touch}
-  .pdfview canvas{display:block;margin:8px auto;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.4)}
+  .pdfpage{position:relative;margin:8px auto;width:fit-content}
+  .pdfview canvas{display:block;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.4)}
+  .textlayer{position:absolute;left:0;top:0;overflow:hidden;opacity:1;line-height:1}
+  .textlayer span{position:absolute;color:transparent;white-space:pre;transform-origin:0 0;cursor:text}
+  .textlayer span.hl{background:rgba(232,163,61,.45);color:transparent;border-radius:2px}
+  .textlayer span.hlcur{background:rgba(31,157,99,.55)}
+  .textlayer ::selection{background:rgba(31,157,99,.4)}
+  .pdfsearch{width:120px;max-width:34vw;background:#0e1830;border:1px solid var(--line);color:#fff;border-radius:6px;padding:5px 8px;font-size:13px}
+  .pdfhits{color:#cdd6e5;font-size:12px;min-width:34px;text-align:center}
   .textview{position:absolute;inset:0;display:none;overflow:auto;background:var(--bg);color:var(--txt);padding:14px;white-space:pre-wrap;font-size:14px;line-height:1.6}
   .htmlview{position:absolute;inset:0;display:none;border:0;width:100%;height:100%;background:#fff}
   .zoombar{display:none;align-items:center;gap:6px}
@@ -47,6 +55,10 @@
     <button class="btn" id="btnSaveCsv">.csv</button>
     <button class="btn" id="btnImages" style="display:none">Images</button>
     <div class="zoombar" id="zoombar">
+      <input id="pdfSearch" class="pdfsearch" placeholder="Find in PDF" spellcheck="false" autocomplete="off">
+      <button class="btn" id="pdfPrev" title="Previous">‹</button>
+      <span id="pdfHits" class="pdfhits"></span>
+      <button class="btn" id="pdfNext" title="Next">›</button>
       <button class="btn" id="zoomOut">−</button>
       <button class="btn" id="zoomIn">+</button>
     </div>
