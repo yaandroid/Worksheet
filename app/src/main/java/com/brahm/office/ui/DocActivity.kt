@@ -41,15 +41,19 @@ class DocActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Wrap the WebView in a parent and pad THAT for system bars (WebView eats its own insets).
+        val root = android.widget.FrameLayout(this)
+        root.setBackgroundColor(0xFF16233F.toInt())
         web = WebView(this)
-        setContentView(web)
+        root.addView(web, android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT))
+        setContentView(root)
 
-        // Keep content clear of the status bar / navigation bar (edge-to-edge on Android 15).
-        web.setBackgroundColor(0xFF16233F.toInt())
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(web) { v, insets ->
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val b = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            v.setPadding(0, b.top, 0, b.bottom)
-            insets
+            v.setPadding(b.left, b.top, b.right, b.bottom)
+            androidx.core.view.WindowInsetsCompat.CONSUMED
         }
 
         // Android 15 (targetSdk 35) draws edge-to-edge: pad the WebView by the
