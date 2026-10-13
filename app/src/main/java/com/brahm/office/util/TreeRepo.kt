@@ -37,6 +37,7 @@ object TreeRepo {
 
     private fun walk(dir: DocumentFile, out: MutableList<FileItem>, q: String, depth: Int) {
         if (depth > 8 || out.size >= 5000) return
+        val dirName = dir.name ?: ""
         val children = try { dir.listFiles() } catch (e: Exception) { return }
         for (f in children) {
             if (out.size >= 5000) return
@@ -46,7 +47,7 @@ object TreeRepo {
                 val name = f.name ?: continue
                 val ext = name.substringAfterLast('.', "").lowercase()
                 if (ext in supported && (q.isEmpty() || name.lowercase().contains(q))) {
-                    out.add(FileItem(name, f.uri.toString(), f.length(), f.lastModified(), DocType.fromName(name)))
+                    out.add(FileItem(name, f.uri.toString(), f.length(), f.lastModified(), DocType.fromName(name), dirName))
                 }
             }
         }

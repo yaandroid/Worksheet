@@ -5,5 +5,6 @@ data class FileItem(
     val path: String,
     val size: Long,
     val modified: Long,
-    val type: DocType
+    val type: DocType,
+    val folder: String = ""
 )

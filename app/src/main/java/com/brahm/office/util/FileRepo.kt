@@ -42,7 +42,7 @@ object FileRepo {
                 if (ext in supported && (q.isEmpty() || f.name.lowercase().contains(q))) {
                     out[f.absolutePath] = FileItem(
                         f.name, f.absolutePath, f.length(), f.lastModified(),
-                        DocType.fromName(f.name)
+                        DocType.fromName(f.name), f.parentFile?.name ?: ""
                     )
                 }
             }
