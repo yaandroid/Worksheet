@@ -471,6 +471,123 @@
   document.getElementById('fColIns').onclick = () => insertCol(selC);
   document.getElementById('fColDel').onclick = () => deleteCol(selC);
 
+  // ---------- charts ----------
+  const chartModal = document.getElementById('chartmodal');
+  const chartcv = document.getElementById('chartcv');
+  const cctx = chartcv.getContext('2d');
+  let chartType = 'bar';
+  let chartData = null;
+  const PAL = ['#1F9D63', '#E8A33D', '#2B579A', '#D64541', '#8e44ad', '#16a085', '#d35400', '#2c3e50'];
+
+  function detectRegion() {
+    const s = sheet(); if (!s.cells.size) return null;
+    const has = (r, c) => s.raw(r, c) !== '';
+    if (!has(selR, selC)) { // fall back to full used range
+      let mr = 0, mc = 0; for (const k of s.cells.keys()) { const r = Math.floor(k / E.MAX_COLS), c = k % E.MAX_COLS; if (r > mr) mr = r; if (c > mc) mc = c; }
+      return { r0: 0, c0: 0, r1: mr, c1: mc };
+    }
+    let r0 = selR, r1 = selR, c0 = selC, c1 = selC;
+    while (r0 > 0 && (has(r0 - 1, c0) || has(r0 - 1, c1))) r0--;
+    while (r1 < E.MAX_ROWS - 1 && (has(r1 + 1, c0) || has(r1 + 1, c1))) r1++;
+    while (c0 > 0 && (has(r0, c0 - 1) || has(r1, c0 - 1))) c0--;
+    while (c1 < E.MAX_COLS - 1 && (has(r0, c1 + 1) || has(r1, c1 + 1))) c1++;
+    return { r0, c0, r1, c1 };
+  }
+  function buildChartData() {
+    const reg = detectRegion(); if (!reg) return null;
+    const s = sheet();
+    const numAt = (r, c) => { const v = s.value(r, c); return v && v.t === 'num' ? v.n : null; };
+    // detect header row: row r0 mostly text
+    let headerRow = false, txt = 0, tot = 0;
+    for (let c = reg.c0; c <= reg.c1; c++) { tot++; if (numAt(reg.r0, c) === null && s.raw(reg.r0, c) !== '') txt++; }
+    if (tot && txt >= tot - 1) headerRow = true;
+    const dataR0 = headerRow ? reg.r0 + 1 : reg.r0;
+    // label column = first column if its data cells are non-numeric
+    let labelCol = -1, lt = 0, ln = 0;
+    for (let r = dataR0; r <= reg.r1; r++) { if (numAt(r, reg.c0) === null && s.raw(r, reg.c0) !== '') lt++; if (numAt(r, reg.c0) !== null) ln++; }
+    if (lt > ln) labelCol = reg.c0;
+    const labels = [];
+    for (let r = dataR0; r <= reg.r1; r++) labels.push(labelCol >= 0 ? (s.display(r, reg.c0) || ('Row ' + (r + 1))) : String(r + 1));
+    const series = [];
+    for (let c = reg.c0; c <= reg.c1; c++) {
+      if (c === labelCol) continue;
+      const vals = []; let any = false;
+      for (let r = dataR0; r <= reg.r1; r++) { const n = numAt(r, c); vals.push(n == null ? 0 : n); if (n != null) any = true; }
+      if (!any) continue;
+      series.push({ name: headerRow ? (s.display(reg.r0, c) || E.colName(c)) : E.colName(c), data: vals });
+    }
+    if (!series.length) return null;
+    return { labels, series };
+  }
+  function sizeChartCanvas() {
+    const r = chartcv.getBoundingClientRect(); const d = window.devicePixelRatio || 1;
+    chartcv.width = Math.floor(r.width * d); chartcv.height = Math.floor((r.height || 360) * d);
+    cctx.setTransform(d, 0, 0, d, 0, 0);
+    return { w: r.width, h: r.height || 360 };
+  }
+  function drawChart() {
+    if (!chartData) return;
+    const { w, h } = sizeChartCanvas();
+    cctx.clearRect(0, 0, w, h); cctx.fillStyle = '#fff'; cctx.fillRect(0, 0, w, h);
+    const d = chartData;
+    if (chartType === 'pie') return drawPie(w, h, d);
+    const padL = 46, padB = 46, padT = 16, padR = 12;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+    let mn = 0, mx = 0;
+    d.series.forEach(s => s.data.forEach(v => { if (v < mn) mn = v; if (v > mx) mx = v; }));
+    if (mx === mn) mx = mn + 1;
+    const yOf = v => padT + plotH - (v - mn) / (mx - mn) * plotH;
+    // axes + gridlines
+    cctx.strokeStyle = '#e3e7ee'; cctx.lineWidth = 1; cctx.fillStyle = '#5b6472'; cctx.font = '11px sans-serif'; cctx.textAlign = 'right';
+    for (let g = 0; g <= 4; g++) { const val = mn + (mx - mn) * g / 4; const y = yOf(val); cctx.beginPath(); cctx.moveTo(padL, y); cctx.lineTo(w - padR, y); cctx.stroke(); cctx.fillText(fmtAxis(val), padL - 5, y + 3); }
+    const n = d.labels.length, groupW = plotW / Math.max(1, n);
+    // x labels
+    cctx.textAlign = 'center'; cctx.fillStyle = '#16233F';
+    const step = Math.ceil(n / Math.max(1, Math.floor(plotW / 48)));
+    for (let i = 0; i < n; i++) { if (i % step) continue; const x = padL + groupW * (i + .5); const lab = String(d.labels[i]); cctx.fillText(lab.length > 8 ? lab.slice(0, 7) + '…' : lab, x, h - padB + 16); }
+    if (chartType === 'line') {
+      d.series.forEach((s, si) => { cctx.strokeStyle = PAL[si % PAL.length]; cctx.lineWidth = 2; cctx.beginPath();
+        s.data.forEach((v, i) => { const x = padL + groupW * (i + .5), y = yOf(v); i ? cctx.lineTo(x, y) : cctx.moveTo(x, y); }); cctx.stroke();
+        cctx.fillStyle = PAL[si % PAL.length]; s.data.forEach((v, i) => { const x = padL + groupW * (i + .5), y = yOf(v); cctx.beginPath(); cctx.arc(x, y, 3, 0, 7); cctx.fill(); }); });
+    } else { // bar
+      const bw = groupW / (d.series.length + 0.6);
+      d.series.forEach((s, si) => { cctx.fillStyle = PAL[si % PAL.length];
+        s.data.forEach((v, i) => { const x = padL + groupW * i + bw * (si + 0.3); const y = yOf(v), y0 = yOf(0); cctx.fillRect(x, Math.min(y, y0), bw * 0.9, Math.abs(y0 - y)); }); });
+    }
+    drawLegend(w, d.series);
+  }
+  function drawPie(w, h, d) {
+    const s = d.series[0]; const total = s.data.reduce((a, b) => a + Math.max(0, b), 0) || 1;
+    const cx = w / 2, cy = h / 2 - 6, R = Math.min(w, h) / 3;
+    let a0 = -Math.PI / 2;
+    s.data.forEach((v, i) => { const frac = Math.max(0, v) / total; const a1 = a0 + frac * Math.PI * 2;
+      cctx.fillStyle = PAL[i % PAL.length]; cctx.beginPath(); cctx.moveTo(cx, cy); cctx.arc(cx, cy, R, a0, a1); cctx.closePath(); cctx.fill();
+      if (frac > 0.04) { const mid = (a0 + a1) / 2; cctx.fillStyle = '#fff'; cctx.font = 'bold 11px sans-serif'; cctx.textAlign = 'center'; cctx.fillText(Math.round(frac * 100) + '%', cx + Math.cos(mid) * R * .62, cy + Math.sin(mid) * R * .62 + 3); }
+      a0 = a1; });
+    cctx.font = '11px sans-serif';
+    d.labels.forEach((lab, i) => { const y = 12 + i * 16; if (y > h - 8) return; cctx.fillStyle = PAL[i % PAL.length]; cctx.fillRect(8, y, 11, 11); cctx.fillStyle = '#16233F'; cctx.textAlign = 'left'; cctx.fillText(String(lab).slice(0, 18) + '  (' + s.name + ')', 24, y + 10); });
+  }
+  function drawLegend(w, series) {
+    if (series.length < 2) return; let x = 46;
+    cctx.font = '11px sans-serif'; cctx.textAlign = 'left';
+    series.forEach((s, si) => { cctx.fillStyle = PAL[si % PAL.length]; cctx.fillRect(x, 2, 11, 11); cctx.fillStyle = '#16233F'; cctx.fillText(s.name, x + 15, 11); x += 30 + cctx.measureText(s.name).width; });
+  }
+  function fmtAxis(v) { const a = Math.abs(v); if (a >= 1e7) return (v / 1e7).toFixed(1) + 'Cr'; if (a >= 1e5) return (v / 1e5).toFixed(1) + 'L'; if (a >= 1e3) return (v / 1e3).toFixed(1) + 'k'; return (Math.round(v * 100) / 100).toString(); }
+  function openChart() {
+    chartData = buildChartData();
+    if (!chartData) { setStatus('Select a data range with numbers to chart'); return; }
+    chartModal.classList.add('show');
+    document.getElementById('charttitle').textContent = 'Chart · ' + chartData.series.length + ' series × ' + chartData.labels.length;
+    requestAnimationFrame(drawChart);
+  }
+  document.getElementById('fChart').onclick = openChart;
+  document.getElementById('chartClose').onclick = () => chartModal.classList.remove('show');
+  chartModal.addEventListener('click', (e) => { if (e.target === chartModal) chartModal.classList.remove('show'); });
+  document.querySelectorAll('.ctype').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.ctype').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    chartType = b.getAttribute('data-ct'); drawChart();
+  });
+
   function sortColumn(asc) {
     const s = sheet();
     let mr = 0, mc = 0; for (const k of s.cells.keys()) { const r = Math.floor(k / E.MAX_COLS), c = k % E.MAX_COLS; if (r > mr) mr = r; if (c > mc) mc = c; }

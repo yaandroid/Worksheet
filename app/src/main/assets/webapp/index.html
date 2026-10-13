@@ -26,6 +26,14 @@
   /* magnifier loupe */
   .loupe{position:fixed;width:150px;height:150px;border-radius:50%;border:3px solid var(--saffron);box-shadow:0 4px 18px rgba(0,0,0,.6);overflow:hidden;display:none;z-index:60;pointer-events:none;background:#fff}
   .loupe canvas{width:150px;height:150px}
+  /* chart modal */
+  .chartmodal{position:fixed;inset:0;z-index:70;background:rgba(14,24,48,.86);display:none;align-items:center;justify-content:center;padding:12px}
+  .chartmodal.show{display:flex}
+  .chartbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:100%;max-width:640px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
+  .charthead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);color:var(--txt);font-weight:600}
+  .chartbtns{display:flex;gap:6px;flex-wrap:wrap}
+  .ctype.on{background:var(--saffron);color:#2a1d00}
+  #chartcv{flex:1;width:100%;background:#fff;touch-action:none}
 </style>
 </head>
 <body>
@@ -74,6 +82,8 @@
     <button class="fbtn" id="fRowDel" title="Delete this row">−Row</button>
     <button class="fbtn" id="fColIns" title="Insert column left">+Col</button>
     <button class="fbtn" id="fColDel" title="Delete this column">−Col</button>
+    <span class="fsep"></span>
+    <button class="fbtn" id="fChart" title="Chart from data">📊 Chart</button>
   </div>
 
   <div class="stage">
@@ -92,6 +102,21 @@
   </div>
 
   <div class="loupe" id="loupe"><canvas id="loupecv" width="150" height="150"></canvas></div>
+
+  <div class="chartmodal" id="chartmodal">
+    <div class="chartbox">
+      <div class="charthead">
+        <span id="charttitle">Chart</span>
+        <div class="chartbtns">
+          <button class="fbtn ctype on" data-ct="bar">Bar</button>
+          <button class="fbtn ctype" data-ct="line">Line</button>
+          <button class="fbtn ctype" data-ct="pie">Pie</button>
+          <button class="fbtn" id="chartClose">✕</button>
+        </div>
+      </div>
+      <canvas id="chartcv"></canvas>
+    </div>
+  </div>
 
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/pdf.min.js"></script>
