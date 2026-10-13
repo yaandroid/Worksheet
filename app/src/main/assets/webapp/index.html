@@ -7,20 +7,31 @@
 <link rel="stylesheet" href="styles.css">
 <style>
   .pdfview{position:absolute;inset:0;display:none;overflow:auto;background:#444;-webkit-overflow-scrolling:touch}
-  .pdfview canvas{display:block;margin:8px auto;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.4);max-width:100%}
+  .pdfview canvas{display:block;margin:8px auto;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.4)}
   .textview{position:absolute;inset:0;display:none;overflow:auto;background:var(--bg);color:var(--txt);padding:14px;white-space:pre-wrap;font-size:14px;line-height:1.6}
   .htmlview{position:absolute;inset:0;display:none;border:0;width:100%;height:100%;background:#fff}
   .zoombar{display:none;align-items:center;gap:6px}
   .zoombar.show{display:flex}
   .loading{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--muted);font-size:15px;background:var(--bg)}
   .loading.show{display:flex}
+  /* function autocomplete */
+  .aclist{position:absolute;left:8px;right:8px;z-index:40;background:var(--panel);border:1px solid var(--line);border-radius:8px;max-height:46vh;overflow:auto;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+  .aclist.show{display:block}
+  .acitem{padding:10px 12px;border-bottom:1px solid var(--line);color:var(--txt);font-size:14px}
+  .acitem .fn{color:var(--saffron);font-weight:600}
+  .acitem .hint{color:var(--muted);font-size:12px;margin-left:6px}
+  .acitem:active{background:#24324f}
+  /* magnifier loupe */
+  .loupe{position:fixed;width:150px;height:150px;border-radius:50%;border:3px solid var(--saffron);box-shadow:0 4px 18px rgba(0,0,0,.6);overflow:hidden;display:none;z-index:60;pointer-events:none;background:#fff}
+  .loupe canvas{width:150px;height:150px}
 </style>
 </head>
 <body>
   <div class="topbar">
     <div class="brand"><span class="logo"></span> BRAHM Office</div>
     <button class="btn" id="btnOpen">Open</button>
-    <button class="btn" id="btnNew">New sheet</button>
+    <button class="btn" id="btnNew">New</button>
+    <button class="btn" id="btnUndo" title="Undo">↶ Undo</button>
     <button class="btn accent" id="btnSaveXlsx">Save .xlsx</button>
     <button class="btn" id="btnSaveCsv">.csv</button>
     <button class="btn" id="btnImages" style="display:none">Images</button>
@@ -28,13 +39,13 @@
       <button class="btn" id="zoomOut">−</button>
       <button class="btn" id="zoomIn">+</button>
     </div>
-    <div class="spacer"></div>
   </div>
 
   <div class="formulabar" id="fbar">
     <div class="cellref" id="cellref">A1</div>
-    <input id="finput" placeholder="Value or =formula" spellcheck="false" autocomplete="off">
+    <input id="finput" placeholder="Value or =formula" spellcheck="false" autocomplete="off" autocapitalize="off">
   </div>
+  <div class="aclist" id="aclist"></div>
 
   <div class="stage">
     <canvas id="grid"></canvas>
@@ -50,6 +61,8 @@
     <div class="sheettabs" id="tabs"></div>
     <div id="status">BRAHM Office · Developed by Sandeep Kushwah</div>
   </div>
+
+  <div class="loupe" id="loupe"><canvas id="loupecv" width="150" height="150"></canvas></div>
 
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/pdf.min.js"></script>

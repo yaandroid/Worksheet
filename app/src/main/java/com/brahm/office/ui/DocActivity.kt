@@ -77,6 +77,8 @@ class DocActivity : AppCompatActivity() {
             useWideViewPort = false
         }
         web.addJavascriptInterface(Bridge(), "AndroidBridge")
+        // Enables JS alert/confirm/prompt dialogs (used for rename/delete sheet).
+        web.webChromeClient = android.webkit.WebChromeClient()
         web.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 pageReady = true
