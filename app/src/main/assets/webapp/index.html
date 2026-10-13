@@ -23,6 +23,7 @@
     <button class="btn" id="btnNew">New sheet</button>
     <button class="btn accent" id="btnSaveXlsx">Save .xlsx</button>
     <button class="btn" id="btnSaveCsv">.csv</button>
+    <button class="btn" id="btnImages" style="display:none">Images</button>
     <div class="zoombar" id="zoombar">
       <button class="btn" id="zoomOut">−</button>
       <button class="btn" id="zoomIn">+</button>
@@ -41,6 +42,8 @@
     <div class="textview" id="textview"></div>
     <iframe class="htmlview" id="htmlview"></iframe>
     <div class="loading" id="loading">Opening…</div>
+    <div class="gallery" id="gallery"></div>
+    <div class="lightbox" id="lightbox"><img id="lightimg" src=""></div>
   </div>
 
   <div class="statusbar">
@@ -50,6 +53,7 @@
 
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/pdf.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
   <script src="engine.js"></script>
   <script src="app.js"></script>
 </body>

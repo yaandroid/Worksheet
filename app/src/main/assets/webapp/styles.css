@@ -38,3 +38,13 @@ body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(-
 .sheettab{font-size:11px;padding:4px 10px}
 body{overflow-x:hidden}
 .topbar .spacer{display:none}
+
+/* ---- Excel embedded-image gallery ---- */
+.gallery{position:absolute;inset:0;display:none;overflow:auto;background:var(--bg);padding:10px;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+.gallery.show{display:grid}
+.gallery img{width:100%;height:120px;object-fit:contain;background:#fff;border-radius:8px;border:1px solid var(--line);cursor:pointer}
+.gallery .ghead{grid-column:1/-1;color:var(--txt);font-size:14px;display:flex;justify-content:space-between;align-items:center;padding:4px 2px}
+.gallery .gclose{background:var(--saffron);color:#2a1d00;border:0;border-radius:6px;padding:6px 12px;font-weight:600}
+.lightbox{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.92);z-index:50}
+.lightbox.show{display:flex}
+.lightbox img{max-width:98%;max-height:98%;object-fit:contain}

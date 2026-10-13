@@ -32,6 +32,8 @@
     textview.style.display = 'none'; htmlview.style.display = 'none';
     fbar.style.display = 'none'; zoombar.classList.remove('show');
     pdfview.innerHTML = ''; htmlview.src = 'about:blank';
+    const g = document.getElementById('gallery'); if (g) g.classList.remove('show');
+    const lb = document.getElementById('lightbox'); if (lb) lb.classList.remove('show');
   }
   function showSheet() { hideAll(); canvas.style.display = 'block'; fbar.style.display = 'flex';
     document.querySelector('.topbar').querySelectorAll('.btn').forEach(b=>{}); resize(); draw(); }
@@ -196,6 +198,50 @@
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([arr])); a.download = name; a.click(); }
   }
 
+  // ---------- embedded images (xlsx/docx are ZIPs) ----------
+  let images = [];
+  const btnImages = document.getElementById('btnImages');
+  const gallery = document.getElementById('gallery');
+  const lightbox = document.getElementById('lightbox');
+  const lightimg = document.getElementById('lightimg');
+
+  function clearImages() {
+    images.forEach(i => { try { URL.revokeObjectURL(i.url); } catch (e) {} });
+    images = []; btnImages.style.display = 'none';
+    gallery.classList.remove('show'); lightbox.classList.remove('show');
+  }
+
+  async function extractImages(bytes) {
+    clearImages();
+    if (typeof JSZip === 'undefined') return;
+    try {
+      const zip = await JSZip.loadAsync(bytes);
+      const names = Object.keys(zip.files).filter(n =>
+        /(^|\/)(xl|word|ppt)\/media\//i.test(n) && /\.(png|jpe?g|gif|bmp|webp|emf|wmf)$/i.test(n));
+      for (const n of names) {
+        const ext = n.split('.').pop().toLowerCase();
+        if (ext === 'emf' || ext === 'wmf') continue; // not browser-renderable
+        const blob = await zip.files[n].async('blob');
+        images.push({ name: n.split('/').pop(), url: URL.createObjectURL(blob) });
+      }
+      if (images.length) { btnImages.textContent = 'Images (' + images.length + ')'; btnImages.style.display = ''; }
+    } catch (e) {}
+  }
+
+  function openGallery() {
+    if (!images.length) return;
+    gallery.innerHTML = '';
+    const head = document.createElement('div'); head.className = 'ghead';
+    head.innerHTML = '<span>' + images.length + ' image(s) in this file</span>';
+    const close = document.createElement('button'); close.className = 'gclose'; close.textContent = 'Close';
+    close.onclick = () => gallery.classList.remove('show'); head.appendChild(close); gallery.appendChild(head);
+    images.forEach(im => { const img = document.createElement('img'); img.src = im.url; img.alt = im.name;
+      img.onclick = () => { lightimg.src = im.url; lightbox.classList.add('show'); }; gallery.appendChild(img); });
+    gallery.classList.add('show');
+  }
+  btnImages.onclick = openGallery;
+  lightbox.onclick = () => lightbox.classList.remove('show');
+
   // ---------- entry point called by Android ----------
   // base64 bytes + filename. Routes by extension.
   window.BrahmOpen = function (b64, name) {
@@ -203,23 +249,27 @@
       const bin = atob(b64); const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const n = (name || '').toLowerCase();
-      if (n.endsWith('.pdf')) { openPdf(bytes); }
-      else if (n.endsWith('.xlsx') || n.endsWith('.xls') || n.endsWith('.xlsm')) { showSheet(); loadWorkbook(bytes, name); }
-      else if (n.endsWith('.csv') || n.endsWith('.tsv')) { loadCsv(new TextDecoder().decode(bytes), name); }
-      else if (n.endsWith('.html') || n.endsWith('.htm')) { showHtml(new TextDecoder().decode(bytes)); }
-      else if (n.endsWith('.md') || n.endsWith('.markdown')) { showMarkdown(new TextDecoder().decode(bytes)); }
-      else if (n.endsWith('.doc') || n.endsWith('.docx') || n.endsWith('.ppt') || n.endsWith('.pptx')) {
-        // Office binary preview not inlined yet — show a readable notice + any extractable text.
-        showText('This is a ' + name + ' file.\n\nViewing Word/PowerPoint inside the app is coming next. For now, open it as PDF after converting, or it will still open in the sheet/text engine where possible.');
+      if (n.endsWith('.pdf')) { clearImages(); openPdf(bytes); }
+      else if (n.endsWith('.xlsx') || n.endsWith('.xls') || n.endsWith('.xlsm')) { showSheet(); loadWorkbook(bytes, name); extractImages(bytes); }
+      else if (n.endsWith('.csv') || n.endsWith('.tsv')) { clearImages(); loadCsv(new TextDecoder().decode(bytes), name); }
+      else if (n.endsWith('.html') || n.endsWith('.htm')) { clearImages(); showHtml(new TextDecoder().decode(bytes)); }
+      else if (n.endsWith('.md') || n.endsWith('.markdown')) { clearImages(); showMarkdown(new TextDecoder().decode(bytes)); }
+      else if (n.endsWith('.docx') || n.endsWith('.pptx')) {
+        // Open the images now; full Word/PPT layout view comes next.
+        showText('Opened ' + name + '.\n\nTap “Images” above to see pictures inside this file.\nFull Word/PowerPoint page view is coming next.');
+        extractImages(bytes);
       }
-      else { // txt and anything else → text
-        showText(new TextDecoder().decode(bytes)); }
+      else if (n.endsWith('.doc') || n.endsWith('.ppt')) {
+        clearImages();
+        showText('This is an old-format ' + name + ' file.\n\nFull view is coming next — meanwhile save it as .docx/.pptx or PDF to open it here.');
+      }
+      else { clearImages(); showText(new TextDecoder().decode(bytes)); }
     } catch (e) { textFallback('Could not open ' + name + '\n' + e.message); }
   };
 
   // ---------- buttons ----------
   document.getElementById('btnOpen').onclick = () => { if (AB && AB.pickFile) AB.pickFile(); };
-  document.getElementById('btnNew').onclick = () => { book = [new E.Sheet('Sheet1')]; active = 0; renderTabs(); showSheet(); select(0, 0); setStatus('New sheet'); };
+  document.getElementById('btnNew').onclick = () => { clearImages(); book = [new E.Sheet('Sheet1')]; active = 0; renderTabs(); showSheet(); select(0, 0); setStatus('New sheet'); };
   document.getElementById('btnSaveXlsx').onclick = () => saveAs('xlsx');
   document.getElementById('btnSaveCsv').onclick = () => saveAs('csv');
 
