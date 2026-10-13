@@ -32,6 +32,7 @@
     <button class="btn" id="btnOpen">Open</button>
     <button class="btn" id="btnNew">New</button>
     <button class="btn" id="btnUndo" title="Undo">↶ Undo</button>
+    <button class="btn" id="btnFormat" title="Format">Aa</button>
     <button class="btn accent" id="btnSaveXlsx">Save .xlsx</button>
     <button class="btn" id="btnSaveCsv">.csv</button>
     <button class="btn" id="btnImages" style="display:none">Images</button>
@@ -46,6 +47,23 @@
     <input id="finput" placeholder="Value or =formula" spellcheck="false" autocomplete="off" autocapitalize="off">
   </div>
   <div class="aclist" id="aclist"></div>
+
+  <div class="fmtbar" id="fmtbar">
+    <button class="fbtn" id="fB" title="Bold"><b>B</b></button>
+    <button class="fbtn" id="fI" title="Italic"><i>I</i></button>
+    <label class="fbtn">A<input type="color" id="fColor" value="#16233f"></label>
+    <label class="fbtn">Fill<input type="color" id="fFill" value="#fff59d"></label>
+    <select id="fNF" class="fsel">
+      <option value="gen">General</option>
+      <option value="num">1,234.56</option>
+      <option value="inr">₹ 1,234.56</option>
+      <option value="pct">12.34%</option>
+      <option value="date">Date</option>
+    </select>
+    <button class="fbtn" id="fClear">Clear</button>
+    <button class="fbtn" id="fSortA">A→Z</button>
+    <button class="fbtn" id="fSortZ">Z→A</button>
+  </div>
 
   <div class="stage">
     <canvas id="grid"></canvas>

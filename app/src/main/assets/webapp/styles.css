@@ -48,3 +48,11 @@ body{overflow-x:hidden}
 .lightbox{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.92);z-index:50}
 .lightbox.show{display:flex}
 .lightbox img{max-width:98%;max-height:98%;object-fit:contain}
+
+/* ---- format bar ---- */
+.fmtbar{display:none;flex-wrap:wrap;gap:6px;align-items:center;background:var(--panel);border-bottom:1px solid var(--line);padding:6px 8px}
+.fmtbar.show{display:flex}
+.fbtn{background:#24324f;color:#fff;border:1px solid #2f4063;border-radius:6px;padding:6px 10px;font-size:13px;display:inline-flex;align-items:center;gap:4px;cursor:pointer}
+.fbtn input[type=color]{width:22px;height:22px;border:0;background:none;padding:0}
+.fbtn.on{background:var(--saffron);color:#2a1d00}
+.fsel{background:#11161f;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px}

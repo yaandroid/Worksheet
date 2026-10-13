@@ -9,6 +9,25 @@
   let active = 0;
   const sheet = () => book[active];
 
+  // ---- per-cell formatting (display only; kept in-app) ----
+  const cellKey = (r, c) => r * E.MAX_COLS + c;
+  function fmtOf(s) { if (!s.fmt) s.fmt = {}; return s.fmt; }
+  function fmtGet(s, r, c) { return fmtOf(s)[cellKey(r, c)]; }
+  function fmtSet(prop, val) {
+    const f = fmtOf(sheet()); const k = cellKey(selR, selC);
+    const o = f[k] || {}; o[prop] = val; f[k] = o; draw();
+  }
+  function fmtClear() { const f = fmtOf(sheet()); delete f[cellKey(selR, selC)]; draw(); }
+  function formatNum(n, nf) {
+    switch (nf) {
+      case 'num': return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      case 'inr': return '₹ ' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      case 'pct': return (n * 100).toFixed(2) + '%';
+      case 'date': { const d = new Date(Date.UTC(1899, 11, 30) + n * 86400000); return isNaN(d) ? String(n) : d.toLocaleDateString('en-GB'); }
+      default: return null;
+    }
+  }
+
   const canvas = document.getElementById('grid');
   const ctx = canvas.getContext('2d');
   const pdfview = document.getElementById('pdfview');
@@ -35,6 +54,7 @@
     canvas.style.display = 'none'; pdfview.style.display = 'none';
     textview.style.display = 'none'; htmlview.style.display = 'none';
     fbar.style.display = 'none'; zoombar.classList.remove('show'); aclist.classList.remove('show');
+    const fb = document.getElementById('fmtbar'); if (fb) fb.classList.remove('show');
     pdfview.innerHTML = ''; htmlview.src = 'about:blank';
     document.getElementById('gallery').classList.remove('show');
     document.getElementById('lightbox').classList.remove('show');
@@ -73,17 +93,20 @@
       const top = colHead + r * cellH - scrollY;
       for (let c = fC; c <= lC; c++) {
         const left = rowHead + c * cellW - scrollX;
-        ctx.fillStyle = (r % 2 === 0) ? '#fff' : '#fafbfc';
+        const f = fmtGet(sheet(), r, c);
+        ctx.fillStyle = (f && f.fill) ? f.fill : ((r % 2 === 0) ? '#fff' : '#fafbfc');
         ctx.fillRect(left, top, cellW, cellH);
         if (r === selR && c === selC) { ctx.fillStyle = 'rgba(31,157,99,.18)'; ctx.fillRect(left, top, cellW, cellH); }
         ctx.strokeStyle = '#dce1e8'; ctx.lineWidth = 1; ctx.strokeRect(left + .5, top + .5, cellW, cellH);
-        const t = sheet().display(r, c);
+        const v = sheet().value(r, c);
+        const isNum = v && v.t === 'num';
+        let t = (f && f.nf && isNum) ? formatNum(v.n, f.nf) : sheet().display(r, c);
         if (t) { ctx.save(); ctx.beginPath(); ctx.rect(left, top, cellW, cellH); ctx.clip();
-          const v = sheet().value(r, c);
-          ctx.fillStyle = (v && v.t === 'err') ? '#D64541' : '#16233F';
-          if (v && v.t === 'num') { ctx.textAlign = 'right'; ctx.fillText(t, left + cellW - 6, top + cellH * .68); }
+          ctx.font = ((f && f.i) ? 'italic ' : '') + ((f && f.b) ? 'bold ' : '') + fs + 'px sans-serif';
+          ctx.fillStyle = (v && v.t === 'err') ? '#D64541' : ((f && f.color) ? f.color : '#16233F');
+          if (isNum) { ctx.textAlign = 'right'; ctx.fillText(t, left + cellW - 6, top + cellH * .68); }
           else { ctx.textAlign = 'left'; ctx.fillText(t, left + 6, top + cellH * .68); }
-          ctx.restore(); }
+          ctx.restore(); ctx.font = fs + 'px sans-serif'; }
       }
     }
     if (selR >= fR && selR <= lR && selC >= fC && selC <= lC) {
@@ -143,7 +166,14 @@
     applyZoom(); scrollX = clamp(scrollX, 0, maxSX()); scrollY = clamp(scrollY, 0, maxSY()); draw();
   }
 
-  function select(r, c) { commit(); selR = r; selC = c; cellref.textContent = E.colName(c) + (r + 1); finput.value = sheet().raw(r, c); aclist.classList.remove('show'); ensureVis(); draw(); }
+  function select(r, c) { commit(); selR = r; selC = c; cellref.textContent = E.colName(c) + (r + 1); finput.value = sheet().raw(r, c); aclist.classList.remove('show'); updateFmtUI(); ensureVis(); draw(); }
+  function updateFmtUI() {
+    const f = fmtGet(sheet(), selR, selC) || {};
+    const fB = document.getElementById('fB'), fI = document.getElementById('fI'), fNF = document.getElementById('fNF');
+    if (fB) fB.classList.toggle('on', !!f.b);
+    if (fI) fI.classList.toggle('on', !!f.i);
+    if (fNF) fNF.value = f.nf || 'gen';
+  }
   function ensureVis() { const cl = selC * cellW, ct = selR * cellH;
     if (cl < scrollX) scrollX = cl; else if (cl + cellW > scrollX + viewW()) scrollX = cl + cellW - viewW();
     if (ct < scrollY) scrollY = ct; else if (ct + cellH > scrollY + viewH()) scrollY = ct + cellH - viewH();
@@ -382,6 +412,32 @@
   document.getElementById('btnNew').onclick = () => { clearImages(); book = [new E.Sheet('Sheet1')]; active = 0; undoStack.length = 0; renderTabs(); showSheet(); select(0, 0); setStatus('New sheet'); };
   document.getElementById('btnSaveXlsx').onclick = () => saveAs('xlsx');
   document.getElementById('btnSaveCsv').onclick = () => saveAs('csv');
+
+  // ---------- formatting toolbar + sort ----------
+  const fmtbar = document.getElementById('fmtbar');
+  document.getElementById('btnFormat').onclick = () => fmtbar.classList.toggle('show');
+  document.getElementById('fB').onclick = () => { const cur = (fmtGet(sheet(), selR, selC) || {}).b; fmtSet('b', !cur); updateFmtUI(); };
+  document.getElementById('fI').onclick = () => { const cur = (fmtGet(sheet(), selR, selC) || {}).i; fmtSet('i', !cur); updateFmtUI(); };
+  document.getElementById('fColor').oninput = (e) => fmtSet('color', e.target.value);
+  document.getElementById('fFill').oninput = (e) => fmtSet('fill', e.target.value);
+  document.getElementById('fNF').onchange = (e) => fmtSet('nf', e.target.value === 'gen' ? null : e.target.value);
+  document.getElementById('fClear').onclick = () => { fmtClear(); updateFmtUI(); };
+  document.getElementById('fSortA').onclick = () => sortColumn(true);
+  document.getElementById('fSortZ').onclick = () => sortColumn(false);
+
+  function sortColumn(asc) {
+    const s = sheet();
+    let mr = 0, mc = 0; for (const k of s.cells.keys()) { const r = Math.floor(k / E.MAX_COLS), c = k % E.MAX_COLS; if (r > mr) mr = r; if (c > mc) mc = c; }
+    if (mr < 1) { setStatus('Nothing to sort'); return; }
+    snapshot();
+    const rows = []; for (let r = 0; r <= mr; r++) { const row = []; for (let c = 0; c <= mc; c++) row.push(s.raw(r, c)); rows.push(row); }
+    const col = selC;
+    const key = (row) => { const v = row[col] || ''; const n = parseFloat(v); return { n: (v !== '' && !isNaN(n)) ? n : null, s: v.toLowerCase() }; };
+    rows.sort((a, b) => { const A = key(a), B = key(b); let cmp; if (A.n !== null && B.n !== null) cmp = A.n - B.n; else if (A.n !== null) cmp = -1; else if (B.n !== null) cmp = 1; else cmp = A.s < B.s ? -1 : (A.s > B.s ? 1 : 0); return asc ? cmp : -cmp; });
+    s.cells.clear(); if (s.cache) s.cache.clear(); s.fmt = {};
+    for (let r = 0; r < rows.length; r++) for (let c = 0; c <= mc; c++) { const v = rows[r][c]; if (v !== '') s.set(r, c, v); }
+    select(0, col); setStatus('Sorted ' + (asc ? 'A→Z' : 'Z→A') + ' by column ' + E.colName(col));
+  }
 
   applyZoom(); renderTabs(); showSheet(); select(0, 0);
   if (AB && AB.ready) AB.ready();
