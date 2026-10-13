@@ -21,6 +21,8 @@
   .acitem .fn{color:var(--saffron);font-weight:600}
   .acitem .hint{color:var(--muted);font-size:12px;margin-left:6px}
   .acitem:active{background:#24324f}
+  .fsep{display:inline-block;width:1px;height:20px;background:var(--line);margin:0 4px;vertical-align:middle}
+  .fbtn.on{background:var(--saffron);color:#2a1d00}
   /* magnifier loupe */
   .loupe{position:fixed;width:150px;height:150px;border-radius:50%;border:3px solid var(--saffron);box-shadow:0 4px 18px rgba(0,0,0,.6);overflow:hidden;display:none;z-index:60;pointer-events:none;background:#fff}
   .loupe canvas{width:150px;height:150px}
@@ -63,6 +65,15 @@
     <button class="fbtn" id="fClear">Clear</button>
     <button class="fbtn" id="fSortA">A→Z</button>
     <button class="fbtn" id="fSortZ">Z→A</button>
+    <span class="fsep"></span>
+    <button class="fbtn" id="fFreeze" title="Freeze first row & column">❄ Freeze</button>
+    <button class="fbtn" id="fCopy" title="Copy cell">⧉ Copy</button>
+    <button class="fbtn" id="fPaste" title="Paste cell">📋 Paste</button>
+    <span class="fsep"></span>
+    <button class="fbtn" id="fRowIns" title="Insert row above">+Row</button>
+    <button class="fbtn" id="fRowDel" title="Delete this row">−Row</button>
+    <button class="fbtn" id="fColIns" title="Insert column left">+Col</button>
+    <button class="fbtn" id="fColDel" title="Delete this column">−Col</button>
   </div>
 
   <div class="stage">

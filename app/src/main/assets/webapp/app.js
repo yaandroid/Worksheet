@@ -79,39 +79,44 @@
   const maxSY = () => Math.max(0, E.MAX_ROWS * cellH - viewH());
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
+  let curFs = 13;
+  let freezeOn = false;
+  function drawCellAt(r, c, left, top) {
+    const f = fmtGet(sheet(), r, c);
+    ctx.fillStyle = (f && f.fill) ? f.fill : ((r % 2 === 0) ? '#fff' : '#fafbfc');
+    ctx.fillRect(left, top, cellW, cellH);
+    if (r === selR && c === selC) { ctx.fillStyle = 'rgba(31,157,99,.18)'; ctx.fillRect(left, top, cellW, cellH); }
+    ctx.strokeStyle = '#dce1e8'; ctx.lineWidth = 1; ctx.strokeRect(left + .5, top + .5, cellW, cellH);
+    const v = sheet().value(r, c);
+    const isNum = v && v.t === 'num';
+    let t = (f && f.nf && isNum) ? formatNum(v.n, f.nf) : sheet().display(r, c);
+    if (t) { ctx.save(); ctx.beginPath(); ctx.rect(left, top, cellW, cellH); ctx.clip();
+      ctx.font = ((f && f.i) ? 'italic ' : '') + ((f && f.b) ? 'bold ' : '') + curFs + 'px sans-serif';
+      ctx.fillStyle = (v && v.t === 'err') ? '#D64541' : ((f && f.color) ? f.color : '#16233F');
+      if (isNum) { ctx.textAlign = 'right'; ctx.fillText(t, left + cellW - 6, top + cellH * .68); }
+      else { ctx.textAlign = 'left'; ctx.fillText(t, left + 6, top + cellH * .68); }
+      ctx.restore(); ctx.font = curFs + 'px sans-serif'; }
+  }
   function draw() {
     if (canvas.style.display === 'none') return;
     const w = canvas.width / dpr, h = canvas.height / dpr;
     ctx.clearRect(0, 0, w, h);
-    const fs = Math.max(11, Math.round(13 * gridZoom));
-    ctx.font = fs + 'px sans-serif';
+    curFs = Math.max(11, Math.round(13 * gridZoom));
+    ctx.font = curFs + 'px sans-serif';
     const fC = Math.max(0, Math.floor(scrollX / cellW));
     const lC = Math.min(E.MAX_COLS - 1, Math.floor((scrollX + viewW()) / cellW));
     const fR = Math.max(0, Math.floor(scrollY / cellH));
     const lR = Math.min(E.MAX_ROWS - 1, Math.floor((scrollY + viewH()) / cellH));
-    for (let r = fR; r <= lR; r++) {
-      const top = colHead + r * cellH - scrollY;
-      for (let c = fC; c <= lC; c++) {
-        const left = rowHead + c * cellW - scrollX;
-        const f = fmtGet(sheet(), r, c);
-        ctx.fillStyle = (f && f.fill) ? f.fill : ((r % 2 === 0) ? '#fff' : '#fafbfc');
-        ctx.fillRect(left, top, cellW, cellH);
-        if (r === selR && c === selC) { ctx.fillStyle = 'rgba(31,157,99,.18)'; ctx.fillRect(left, top, cellW, cellH); }
-        ctx.strokeStyle = '#dce1e8'; ctx.lineWidth = 1; ctx.strokeRect(left + .5, top + .5, cellW, cellH);
-        const v = sheet().value(r, c);
-        const isNum = v && v.t === 'num';
-        let t = (f && f.nf && isNum) ? formatNum(v.n, f.nf) : sheet().display(r, c);
-        if (t) { ctx.save(); ctx.beginPath(); ctx.rect(left, top, cellW, cellH); ctx.clip();
-          ctx.font = ((f && f.i) ? 'italic ' : '') + ((f && f.b) ? 'bold ' : '') + fs + 'px sans-serif';
-          ctx.fillStyle = (v && v.t === 'err') ? '#D64541' : ((f && f.color) ? f.color : '#16233F');
-          if (isNum) { ctx.textAlign = 'right'; ctx.fillText(t, left + cellW - 6, top + cellH * .68); }
-          else { ctx.textAlign = 'left'; ctx.fillText(t, left + 6, top + cellH * .68); }
-          ctx.restore(); ctx.font = fs + 'px sans-serif'; }
-      }
-    }
+    for (let r = fR; r <= lR; r++) { const top = colHead + r * cellH - scrollY;
+      for (let c = fC; c <= lC; c++) drawCellAt(r, c, rowHead + c * cellW - scrollX, top); }
     if (selR >= fR && selR <= lR && selC >= fC && selC <= lC) {
       const l = rowHead + selC * cellW - scrollX, t = colHead + selR * cellH - scrollY;
       ctx.strokeStyle = '#1F9D63'; ctx.lineWidth = 2; ctx.strokeRect(l + 1, t + 1, cellW - 2, cellH - 2);
+    }
+    if (freezeOn) {   // pinned first row + first column
+      for (let c = fC; c <= lC; c++) if (c !== 0) drawCellAt(0, c, rowHead + c * cellW - scrollX, colHead);
+      for (let r = fR; r <= lR; r++) if (r !== 0) drawCellAt(r, 0, rowHead, colHead + r * cellH - scrollY);
+      drawCellAt(0, 0, rowHead, colHead);
     }
     ctx.fillStyle = '#16233F'; ctx.fillRect(0, 0, w, colHead);
     ctx.textAlign = 'center';
@@ -123,6 +128,7 @@
       if (r === selR) { ctx.fillStyle = '#E8A33D'; ctx.fillRect(0, top, rowHead, cellH); ctx.fillStyle = '#2a1d00'; } else ctx.fillStyle = '#fff';
       ctx.fillText(String(r + 1), rowHead / 2, top + cellH * .68); }
     ctx.fillStyle = '#0E1830'; ctx.fillRect(0, 0, rowHead, colHead);
+    if (freezeOn) { ctx.fillStyle = 'rgba(232,163,61,.9)'; ctx.fillRect(rowHead, colHead - 2, w, 2); ctx.fillRect(rowHead - 2, colHead, 2, h); }
   }
 
   // ---------- grid gestures: drag-scroll, tap-select, double-tap zoom, long-press magnify ----------
@@ -424,6 +430,46 @@
   document.getElementById('fClear').onclick = () => { fmtClear(); updateFmtUI(); };
   document.getElementById('fSortA').onclick = () => sortColumn(true);
   document.getElementById('fSortZ').onclick = () => sortColumn(false);
+
+  // ---------- freeze toggle ----------
+  document.getElementById('fFreeze').onclick = () => {
+    freezeOn = !freezeOn;
+    document.getElementById('fFreeze').classList.toggle('on', freezeOn);
+    draw(); setStatus(freezeOn ? 'Freeze on (row 1 & column A pinned)' : 'Freeze off');
+  };
+
+  // ---------- copy / paste cell ----------
+  let clip = null;
+  document.getElementById('fCopy').onclick = () => {
+    const s = sheet(); clip = { input: s.raw(selR, selC), fmt: Object.assign({}, fmtGet(s, selR, selC) || {}) };
+    setStatus('Copied ' + E.colName(selC) + (selR + 1));
+  };
+  document.getElementById('fPaste').onclick = () => {
+    if (!clip) { setStatus('Nothing copied'); return; }
+    snapshot(); const s = sheet();
+    s.set(selR, selC, clip.input);
+    if (Object.keys(clip.fmt).length) fmtOf(s)[cellKey(selR, selC)] = Object.assign({}, clip.fmt);
+    else delete fmtOf(s)[cellKey(selR, selC)];
+    select(selR, selC); setStatus('Pasted to ' + E.colName(selC) + (selR + 1));
+  };
+
+  // ---------- insert / delete row & column ----------
+  function sheetBounds(s) { let mr = 0, mc = 0; for (const k of s.cells.keys()) { const r = Math.floor(k / E.MAX_COLS), c = k % E.MAX_COLS; if (r > mr) mr = r; if (c > mc) mc = c; } return { mr, mc }; }
+  function remapCells(s, fn) {
+    const oldCells = s.cells, oldFmt = fmtOf(s);
+    const nc = new Map(), nf = {};
+    for (const [k, v] of oldCells.entries()) { const r = Math.floor(k / E.MAX_COLS), c = k % E.MAX_COLS; const m = fn(r, c); if (!m) continue; nc.set(cellKey(m.r, m.c), v); }
+    for (const kk in oldFmt) { const k = +kk; const r = Math.floor(k / E.MAX_COLS), c = k % E.MAX_COLS; const m = fn(r, c); if (!m) continue; nf[cellKey(m.r, m.c)] = oldFmt[kk]; }
+    s.cells = nc; s.fmt = nf; if (s.cache) s.cache.clear();
+  }
+  function insertRow(at) { snapshot(); remapCells(sheet(), (r, c) => r >= at ? (r + 1 < E.MAX_ROWS ? { r: r + 1, c } : null) : { r, c }); select(at, selC); setStatus('Row inserted above ' + (at + 1)); }
+  function deleteRow(at) { snapshot(); remapCells(sheet(), (r, c) => r === at ? null : (r > at ? { r: r - 1, c } : { r, c })); select(Math.min(at, E.MAX_ROWS - 1), selC); setStatus('Row ' + (at + 1) + ' deleted'); }
+  function insertCol(at) { snapshot(); remapCells(sheet(), (r, c) => c >= at ? (c + 1 < E.MAX_COLS ? { r, c: c + 1 } : null) : { r, c }); select(selR, at); setStatus('Column inserted left of ' + E.colName(at)); }
+  function deleteCol(at) { snapshot(); remapCells(sheet(), (r, c) => c === at ? null : (c > at ? { r, c: c - 1 } : { r, c })); select(selR, Math.min(at, E.MAX_COLS - 1)); setStatus('Column ' + E.colName(at) + ' deleted'); }
+  document.getElementById('fRowIns').onclick = () => insertRow(selR);
+  document.getElementById('fRowDel').onclick = () => deleteRow(selR);
+  document.getElementById('fColIns').onclick = () => insertCol(selC);
+  document.getElementById('fColDel').onclick = () => deleteCol(selC);
 
   function sortColumn(asc) {
     const s = sheet();

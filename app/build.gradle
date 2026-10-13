@@ -13,7 +13,7 @@ android {
         applicationId "com.brahm.office"
         minSdk 24
         targetSdk 35
-        versionCode 11          // internal — may bump silently so updates install
+        versionCode 12          // internal — may bump silently so updates install
         versionName "1.1"      // visible — stays 1.1 unless Sandeep says to bump
         vectorDrawables { useSupportLibrary true }
     }
