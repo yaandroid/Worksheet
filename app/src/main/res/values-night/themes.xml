@@ -1,10 +1,17 @@
-<resources>
-    <style name="Theme.BrahmOffice" parent="Theme.Material3.DayNight.NoActionBar">
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Deliberately identical to the day theme: BRAHM Office uses one consistent
+         light surface with navy chrome, so the system dark mode never washes out text. -->
+    <style name="Theme.BrahmOffice" parent="Theme.Material3.Light.NoActionBar">
         <item name="colorPrimary">@color/brahm_navy</item>
         <item name="colorOnPrimary">@color/white</item>
         <item name="colorSecondary">@color/brahm_saffron</item>
-        <item name="android:colorBackground">@color/bg_dark</item>
-        <item name="colorSurface">@color/surface_dark</item>
-        <item name="android:statusBarColor">@color/brahm_navy_dark</item>
+        <item name="android:colorBackground">@color/bg_light</item>
+        <item name="colorSurface">@color/surface_light</item>
+        <item name="colorOnSurface">@color/text_light</item>
+        <item name="android:textColorPrimary">@color/text_light</item>
+        <item name="android:textColorSecondary">@color/text_muted_light</item>
+        <item name="android:statusBarColor">@color/brahm_navy</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
     </style>
 </resources>

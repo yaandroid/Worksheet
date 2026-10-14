@@ -31,7 +31,8 @@
             android:layout_height="wrap_content"
             android:maxLines="1"
             android:ellipsize="middle"
-            android:textColor="?android:attr/textColorPrimary"
+            android:textColor="@color/text_light"
+            android:textStyle="bold"
             android:textSize="15sp"
             android:text="file.pdf" />
         <TextView

@@ -56,6 +56,7 @@
     fbar.style.display = 'none'; zoombar.classList.remove('show'); aclist.classList.remove('show');
     const fb = document.getElementById('fmtbar'); if (fb) fb.classList.remove('show');
     const pt = document.getElementById('pdftools'); if (pt) pt.classList.remove('show');
+    const tt = document.getElementById('texttools'); if (tt) tt.classList.remove('show');
     if (editMode) { editMode = false; const eb = document.getElementById('pdfEdit'); if (eb) eb.classList.remove('on'); }
     pdfview.innerHTML = ''; htmlview.src = 'about:blank';
     document.getElementById('gallery').classList.remove('show');
@@ -580,7 +581,29 @@
   };
 
   // ---------- text / html ----------
-  function showText(s) { hideAll(); textview.style.display = 'block'; textview.textContent = s; }
+  const texttools = document.getElementById('texttools');
+  let textName = 'document.txt', textEditable = false, textSnapshot = '';
+  function showText(s) { hideAll(); textview.style.display = 'block'; textview.value = s; textview.readOnly = true; textEditable = false; }
+  function showEditableText(s, name) {
+    hideAll(); textview.style.display = 'block'; textview.value = s; textview.readOnly = false; textEditable = true;
+    textName = name || 'document.txt'; textSnapshot = s;
+    document.getElementById('textname').textContent = textName + '  ·  editable';
+    texttools.classList.add('show');
+    setStatus('Editing ' + textName + ' · tap Save when done');
+  }
+  document.getElementById('tUndo').onclick = () => { if (textEditable) textview.value = textSnapshot; };
+  document.getElementById('tSave').onclick = () => {
+    if (!textEditable) return;
+    const text = textview.value; textSnapshot = text;
+    let b64; try { b64 = btoa(unescape(encodeURIComponent(text))); } catch (e) { setStatus('Save failed'); return; }
+    const low = textName.toLowerCase();
+    const mime = low.endsWith('.md') || low.endsWith('.markdown') ? 'text/markdown'
+      : low.endsWith('.csv') ? 'text/csv' : low.endsWith('.html') || low.endsWith('.htm') ? 'text/html'
+      : low.endsWith('.json') ? 'application/json' : 'text/plain';
+    if (AB && AB.saveFile) AB.saveFile(textName, mime, b64);
+    else { const a = document.createElement('a'); a.href = 'data:' + mime + ';base64,' + b64; a.download = textName; a.click(); }
+    setStatus('Saved ' + textName);
+  };
   function showHtml(s) { hideAll(); htmlview.style.display = 'block'; htmlview.srcdoc = s; setStatus('HTML'); }
   function showMarkdown(s) { showHtml('<pre style="white-space:pre-wrap;font-family:sans-serif;padding:14px;font-size:15px;line-height:1.6">' + s.replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[m])) + '</pre>'); }
 
@@ -698,11 +721,11 @@
       else if (n.endsWith('.xlsx') || n.endsWith('.xls') || n.endsWith('.xlsm')) { showSheet(); loadWorkbook(bytes, name); extractImages(bytes); }
       else if (n.endsWith('.csv') || n.endsWith('.tsv')) { clearImages(); loadCsv(new TextDecoder().decode(bytes), name); }
       else if (n.endsWith('.html') || n.endsWith('.htm')) { clearImages(); showHtml(new TextDecoder().decode(bytes)); }
-      else if (n.endsWith('.md') || n.endsWith('.markdown')) { clearImages(); showMarkdown(new TextDecoder().decode(bytes)); }
+      else if (n.endsWith('.md') || n.endsWith('.markdown')) { clearImages(); showEditableText(new TextDecoder().decode(bytes), name); }
       else if (n.endsWith('.docx')) { openDocx(bytes, name); extractImages(bytes); }
       else if (n.endsWith('.pptx')) { openPptx(bytes, name); extractImages(bytes); }
       else if (n.endsWith('.doc') || n.endsWith('.ppt')) { clearImages(); showText('Old-format ' + name + '. Save as .docx/.pptx or PDF to open here.'); }
-      else { clearImages(); showText(new TextDecoder().decode(bytes)); }
+      else { clearImages(); showEditableText(new TextDecoder().decode(bytes), name || 'document.txt'); }
     } catch (e) { showText('Could not open ' + name + '\n' + e.message); }
   };
 
