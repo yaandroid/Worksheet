@@ -302,16 +302,13 @@
     pdfBytes = bytes.slice(0); pdfName = name || 'document.pdf';
     if (editMode) toggleEdit(false);
     try {
-      const vr = (pdfjsLib && pdfjsLib.version) || '?';
       pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
-      pdfDiag = 'v' + vr + ' pg' + pdfDoc.numPages;
       await renderPdf();
-      setStatus('PDF ' + pdfDiag + ' · pinch zoom · Edit');
+      setStatus('PDF · ' + pdfDoc.numPages + ' pages · pinch zoom · ✏️ Edit to annotate');
     }
-    catch (e) { setStatus('PDF error: ' + (e && e.message ? e.message : e)); showText('Could not open this PDF.\n\n' + (e && e.stack ? e.stack : e)); }
+    catch (e) { setStatus('PDF error'); showText('Could not open this PDF.'); }
     showLoading(false);
   }
-  let pdfDiag = '';
   async function renderPdf() {
     pdfview.innerHTML = '<div id="pdfinner"></div>';
     pdfHits = []; pdfHitIdx = -1; pcssScale = 1; pageMeta = [];
@@ -330,19 +327,12 @@
       cv.width = Math.floor(vpHi.width); cv.height = Math.floor(vpHi.height);
       cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
       wrap.appendChild(cv); inner.appendChild(wrap);
-      try {
-        await page.render({ canvasContext: c2, viewport: vpHi }).promise;
-        if (n === 1) {
-          try { const sx = Math.max(0, (cv.width >> 1) - 50), sy = Math.max(0, (cv.height >> 1) - 50); const d = c2.getImageData(sx, sy, 100, 100).data; let nw = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250) nw++; pdfDiag += ' ok px' + nw; }
-          catch (ge) { pdfDiag += ' px?' + ge.message; }
-        }
-      } catch (re) { pdfDiag += ' RENDERR:' + (re && re.message ? re.message : re); }
+      try { await page.render({ canvasContext: c2, viewport: vpHi }).promise; } catch (re) {}
       try { await buildTextLayer(page, vp, wrap); } catch (e) {}
-      // NOTE: the annotation overlay canvas is created lazily (only in Edit mode).
-      // Stacking a 2nd canvas over the page canvas makes some Android WebViews fail to
-      // composite the page beneath it (page shows blank white), so view mode keeps one canvas.
-      const adpr = Math.min(window.devicePixelRatio || 1, 2);
-      pageMeta.push({ pageNum: n, cssW, cssH, pdfW: base.width, pdfH: base.height, annot: [], canvas: null, pageCanvas: cv, wrap, dpr: adpr });
+      // Editing draws straight onto this same page canvas (one canvas only) — stacking a 2nd
+      // canvas made some Android WebViews fail to composite the page beneath it (blank white).
+      pageMeta.push({ pageNum: n, cssW, cssH, pdfW: base.width, pdfH: base.height, annot: [], pageCanvas: cv, wrap, scale, os });
+      bindDraw(cv, pageMeta.length - 1);
     }
     inner.style.zoom = ''; pcssScale = 1;
     if (pdfSearchEl && pdfSearchEl.value.trim()) runPdfSearch(pdfSearchEl.value.trim());
@@ -458,60 +448,63 @@
 
   // ---------- PDF editing (pen / highlight / text → save via pdf-lib) ----------
   const pdftools = document.getElementById('pdftools');
-  let lastPage = 0, drawing = false, curStroke = null, curMeta = null;
-  function natXY(an, meta, clientX, clientY) { const r = an.getBoundingClientRect(); return { x: (clientX - r.left) * (meta.cssW / r.width), y: (clientY - r.top) * (meta.cssH / r.height) }; }
-  // create the annotation overlay canvas for a page on demand (edit mode only)
-  function ensureAnnot(idx) {
-    const meta = pageMeta[idx]; if (!meta || meta.canvas) return meta && meta.canvas;
-    const an = document.createElement('canvas'); an.className = 'annot edit';
-    an.width = Math.floor(meta.cssW * meta.dpr); an.height = Math.floor(meta.cssH * meta.dpr);
-    an.style.width = meta.cssW + 'px'; an.style.height = meta.cssH + 'px';
-    an.getContext('2d').setTransform(meta.dpr, 0, 0, meta.dpr, 0, 0);
-    meta.wrap.appendChild(an); meta.canvas = an; bindAnnot(an, idx);
-    if (meta.annot.length) redrawAnnot(meta);
-    return an;
+  let lastPage = 0, drawing = false, curStroke = null;
+  function natXY(cv, meta, clientX, clientY) { const r = cv.getBoundingClientRect(); return { x: (clientX - r.left) * (meta.cssW / r.width), y: (clientY - r.top) * (meta.cssH / r.height) }; }
+  // Draw directly on the page canvas (natural coords scaled up by meta.os to the hi-res bitmap).
+  function strokeSeg(meta, a, p0, p1) {
+    const g = meta.pageCanvas.getContext('2d'); g.save(); g.setTransform(meta.os, 0, 0, meta.os, 0, 0);
+    g.globalAlpha = a.type === 'hl' ? 0.3 : 1; g.strokeStyle = a.color; g.lineWidth = a.w; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y); g.stroke(); g.restore();
   }
-  function removeAnnotIfEmpty(meta) {
-    if (meta.canvas && !meta.annot.length) { try { meta.wrap.removeChild(meta.canvas); } catch (e) {} meta.canvas = null; }
+  function drawTextAnnot(meta, a) {
+    const g = meta.pageCanvas.getContext('2d'); g.save(); g.setTransform(meta.os, 0, 0, meta.os, 0, 0);
+    g.globalAlpha = 1; g.fillStyle = a.color; g.font = a.size + 'px sans-serif'; g.textBaseline = 'top';
+    (a.str || '').split('\n').forEach((ln, i) => g.fillText(ln, a.x, a.y + i * a.size * 1.2)); g.restore();
   }
-  function redrawAnnot(meta) {
-    if (!meta.canvas) return;
-    const g = meta.canvas.getContext('2d'); g.clearRect(0, 0, meta.cssW, meta.cssH);
+  function paintAnnots(meta) {
     for (const a of meta.annot) {
-      if (a.type === 'text') { g.globalAlpha = 1; g.fillStyle = a.color; g.font = a.size + 'px sans-serif'; g.textBaseline = 'top';
-        a.str.split('\n').forEach((ln, i) => g.fillText(ln, a.x, a.y + i * a.size * 1.2)); continue; }
-      if (a.pts.length < 1) continue;
-      g.globalAlpha = a.type === 'hl' ? 0.32 : 1; g.strokeStyle = a.color; g.lineWidth = a.w; g.lineCap = 'round'; g.lineJoin = 'round';
-      g.beginPath(); g.moveTo(a.pts[0].x, a.pts[0].y); for (let i = 1; i < a.pts.length; i++) g.lineTo(a.pts[i].x, a.pts[i].y); g.stroke();
+      if (a.type === 'text') drawTextAnnot(meta, a);
+      else { if (a.pts.length === 1) strokeSeg(meta, a, a.pts[0], a.pts[0]); for (let i = 1; i < a.pts.length; i++) strokeSeg(meta, a, a.pts[i - 1], a.pts[i]); }
     }
-    g.globalAlpha = 1;
   }
-  function bindAnnot(an, idx) {
-    an.addEventListener('touchstart', (e) => {
+  // re-render the clean PDF page then repaint remaining annotations (for undo / clear)
+  async function redrawPage(meta) {
+    if (!pdfDoc) return;
+    try {
+      const page = await pdfDoc.getPage(meta.pageNum);
+      const vpHi = page.getViewport({ scale: meta.scale * meta.os });
+      const g = meta.pageCanvas.getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, meta.pageCanvas.width, meta.pageCanvas.height);
+      await page.render({ canvasContext: g, viewport: vpHi }).promise;
+      paintAnnots(meta);
+    } catch (e) {}
+  }
+  function bindDraw(cv, idx) {
+    cv.addEventListener('touchstart', (e) => {
       if (!editMode || e.touches.length > 1) return;
-      const meta = pageMeta[idx]; curMeta = meta; lastPage = idx;
-      const p = natXY(an, meta, e.touches[0].clientX, e.touches[0].clientY);
+      const meta = pageMeta[idx]; lastPage = idx;
+      const p = natXY(cv, meta, e.touches[0].clientX, e.touches[0].clientY);
       e.stopPropagation(); if (e.cancelable) e.preventDefault();
       if (editTool === 'text') {
-        const str = prompt('Text to place on page:'); if (str && str.trim()) { meta.annot.push({ type: 'text', x: p.x, y: p.y, color: pColorEl.value, size: 18 }); meta.annot[meta.annot.length - 1].str = str; redrawAnnot(meta); }
+        const str = prompt('Text to place on page:');
+        if (str && str.trim()) { const a = { type: 'text', x: p.x, y: p.y, color: pColorEl.value, size: 18, str: str }; meta.annot.push(a); drawTextAnnot(meta, a); }
         return;
       }
       drawing = true; curStroke = { type: editTool, color: pColorEl.value, w: +pSizeEl.value * (editTool === 'hl' ? 3 : 1), pts: [p] };
-      meta.annot.push(curStroke); redrawAnnot(meta);
+      meta.annot.push(curStroke); strokeSeg(meta, curStroke, p, p);
     }, { passive: false });
-    an.addEventListener('touchmove', (e) => {
+    cv.addEventListener('touchmove', (e) => {
       if (!editMode || !drawing || e.touches.length > 1 || !curStroke) return;
       e.stopPropagation(); if (e.cancelable) e.preventDefault();
-      curStroke.pts.push(natXY(an, pageMeta[idx], e.touches[0].clientX, e.touches[0].clientY)); redrawAnnot(pageMeta[idx]);
+      const meta = pageMeta[idx]; const p = natXY(cv, meta, e.touches[0].clientX, e.touches[0].clientY);
+      const prev = curStroke.pts[curStroke.pts.length - 1]; curStroke.pts.push(p); strokeSeg(meta, curStroke, prev, p);
     }, { passive: false });
-    an.addEventListener('touchend', (e) => { if (!editMode) return; e.stopPropagation(); drawing = false; curStroke = null; }, { passive: false });
+    cv.addEventListener('touchend', (e) => { if (!editMode) return; e.stopPropagation(); drawing = false; curStroke = null; }, { passive: false });
   }
   const pColorEl = document.getElementById('pColor'), pSizeEl = document.getElementById('pSize');
   function toggleEdit(on) {
     editMode = on; pdftools.classList.toggle('show', on);
     document.getElementById('pdfEdit').classList.toggle('on', on);
-    if (on) { pageMeta.forEach((m, i) => { ensureAnnot(i); if (m.canvas) m.canvas.classList.add('edit'); }); }
-    else { pageMeta.forEach(m => { if (m.canvas) m.canvas.classList.remove('edit'); removeAnnotIfEmpty(m); }); }
     setStatus(on ? 'Edit mode · draw with finger, T to add text, then Save PDF' : 'PDF · pinch zoom · search above');
   }
   document.getElementById('pdfEdit').onclick = () => toggleEdit(!editMode);
@@ -522,9 +515,9 @@
   document.getElementById('pUndo').onclick = () => {
     let m = pageMeta[lastPage];
     if (!m || !m.annot.length) m = pageMeta.find(x => x.annot.length);
-    if (m && m.annot.length) { m.annot.pop(); redrawAnnot(m); }
+    if (m && m.annot.length) { m.annot.pop(); redrawPage(m); }
   };
-  document.getElementById('pClear').onclick = () => { pageMeta.forEach(m => { m.annot = []; redrawAnnot(m); }); setStatus('Annotations cleared'); };
+  document.getElementById('pClear').onclick = () => { pageMeta.forEach(m => { if (m.annot.length) { m.annot = []; redrawPage(m); } }); setStatus('Annotations cleared'); };
   function hexRgb(h) { const n = parseInt(h.replace('#', ''), 16); return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 }; }
   document.getElementById('pSave').onclick = async () => {
     if (typeof PDFLib === 'undefined' || !pdfBytes) { setStatus('Editor unavailable'); return; }
