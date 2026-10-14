@@ -301,10 +301,17 @@
     hideAll(); pdfview.style.display = 'block'; zoombar.classList.add('show'); showLoading(true);
     pdfBytes = bytes.slice(0); pdfName = name || 'document.pdf';
     if (editMode) toggleEdit(false);
-    try { pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise; await renderPdf(); setStatus('PDF · ' + pdfDoc.numPages + ' pages · pinch zoom · ✏️ Edit to annotate'); }
-    catch (e) { setStatus('PDF error'); showText('Could not open this PDF.'); }
+    try {
+      const vr = (pdfjsLib && pdfjsLib.version) || '?';
+      pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+      pdfDiag = 'v' + vr + ' pg' + pdfDoc.numPages;
+      await renderPdf();
+      setStatus('PDF ' + pdfDiag + ' · pinch zoom · Edit');
+    }
+    catch (e) { setStatus('PDF error: ' + (e && e.message ? e.message : e)); showText('Could not open this PDF.\n\n' + (e && e.stack ? e.stack : e)); }
     showLoading(false);
   }
+  let pdfDiag = '';
   async function renderPdf() {
     pdfview.innerHTML = '<div id="pdfinner"></div>';
     pdfHits = []; pdfHitIdx = -1; pcssScale = 1; pageMeta = [];
@@ -322,7 +329,13 @@
       cv.width = Math.floor(vp.width * os); cv.height = Math.floor(vp.height * os);
       cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
       wrap.appendChild(cv); inner.appendChild(wrap);
-      await page.render({ canvasContext: c2, viewport: vp, transform: [os, 0, 0, os, 0, 0] }).promise;
+      try {
+        await page.render({ canvasContext: c2, viewport: vp, transform: [os, 0, 0, os, 0, 0] }).promise;
+        if (n === 1) {
+          try { const d = c2.getImageData(0, 0, Math.min(cv.width, 60), Math.min(cv.height, 60)).data; let nw = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250) nw++; pdfDiag += ' ok px' + nw; }
+          catch (ge) { pdfDiag += ' px?' + ge.message; }
+        }
+      } catch (re) { pdfDiag += ' RENDERR:' + (re && re.message ? re.message : re); }
       try { await buildTextLayer(page, vp, wrap); } catch (e) {}
       // annotation overlay for editing
       const an = document.createElement('canvas'); an.className = 'annot';
