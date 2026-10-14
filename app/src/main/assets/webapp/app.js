@@ -322,17 +322,18 @@
       const page = await pdfDoc.getPage(n);
       const base = page.getViewport({ scale: 1 });
       const scale = (width - 16) / base.width * pdfRenderScale;
-      const vp = page.getViewport({ scale });
+      const vp = page.getViewport({ scale });                  // CSS-size viewport (for layout + text layer)
+      const vpHi = page.getViewport({ scale: scale * os });    // hi-res viewport baked into the canvas (no transform option)
       const cssW = Math.floor(vp.width), cssH = Math.floor(vp.height);
       const wrap = document.createElement('div'); wrap.className = 'pdfpage';
       const cv = document.createElement('canvas'); const c2 = cv.getContext('2d');
-      cv.width = Math.floor(vp.width * os); cv.height = Math.floor(vp.height * os);
+      cv.width = Math.floor(vpHi.width); cv.height = Math.floor(vpHi.height);
       cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
       wrap.appendChild(cv); inner.appendChild(wrap);
       try {
-        await page.render({ canvasContext: c2, viewport: vp, transform: [os, 0, 0, os, 0, 0] }).promise;
+        await page.render({ canvasContext: c2, viewport: vpHi }).promise;
         if (n === 1) {
-          try { const d = c2.getImageData(0, 0, Math.min(cv.width, 60), Math.min(cv.height, 60)).data; let nw = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250) nw++; pdfDiag += ' ok px' + nw; }
+          try { const sx = Math.max(0, (cv.width >> 1) - 50), sy = Math.max(0, (cv.height >> 1) - 50); const d = c2.getImageData(sx, sy, 100, 100).data; let nw = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250) nw++; pdfDiag += ' ok px' + nw; }
           catch (ge) { pdfDiag += ' px?' + ge.message; }
         }
       } catch (re) { pdfDiag += ' RENDERR:' + (re && re.message ? re.message : re); }
