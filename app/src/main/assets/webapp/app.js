@@ -55,6 +55,8 @@
     textview.style.display = 'none'; htmlview.style.display = 'none';
     fbar.style.display = 'none'; zoombar.classList.remove('show'); aclist.classList.remove('show');
     const fb = document.getElementById('fmtbar'); if (fb) fb.classList.remove('show');
+    const pt = document.getElementById('pdftools'); if (pt) pt.classList.remove('show');
+    if (editMode) { editMode = false; const eb = document.getElementById('pdfEdit'); if (eb) eb.classList.remove('on'); }
     pdfview.innerHTML = ''; htmlview.src = 'about:blank';
     document.getElementById('gallery').classList.remove('show');
     document.getElementById('lightbox').classList.remove('show');
@@ -292,32 +294,68 @@
   function hideLoupe() { loupe.style.display = 'none'; }
 
   // ---------- PDF ----------
-  let pdfDoc = null, pdfScale = 1.1;
-  async function openPdf(bytes) {
+  let pdfDoc = null, pdfRenderScale = 1, pdfBaseW = 0, pdfBaseH = 0;
+  let pdfBytes = null, pdfName = 'document.pdf', pageMeta = [], editMode = false, editTool = 'pen';
+  async function openPdf(bytes, name) {
     hideAll(); pdfview.style.display = 'block'; zoombar.classList.add('show'); showLoading(true);
-    try { pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise; await renderPdf(); setStatus('PDF · ' + pdfDoc.numPages + ' pages · search above · double-tap zoom'); }
+    pdfBytes = bytes.slice(0); pdfName = name || 'document.pdf';
+    if (editMode) toggleEdit(false);
+    try { pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise; await renderPdf(); setStatus('PDF · ' + pdfDoc.numPages + ' pages · pinch zoom · ✏️ Edit to annotate'); }
     catch (e) { setStatus('PDF error'); showText('Could not open this PDF.'); }
     showLoading(false);
   }
   async function renderPdf() {
-    pdfview.innerHTML = '<div id="pdfinner"></div>'; pdfHits = []; pdfHitIdx = -1; pcssScale = 1;
+    pdfview.innerHTML = '<div id="pdfsizer"><div id="pdfinner"></div></div>';
+    pdfHits = []; pdfHitIdx = -1; pcssScale = 1; pageMeta = [];
+    const sizer = document.getElementById('pdfsizer');
     const inner = document.getElementById('pdfinner');
     const width = pdfview.clientWidth || window.innerWidth;
+    const os = Math.min((window.devicePixelRatio || 1) * 1.4, 2.5);   // oversample so moderate zoom stays sharp
     for (let n = 1; n <= pdfDoc.numPages; n++) {
       const page = await pdfDoc.getPage(n);
       const base = page.getViewport({ scale: 1 });
-      const scale = (width - 16) / base.width * pdfScale;
+      const scale = (width - 16) / base.width * pdfRenderScale;
       const vp = page.getViewport({ scale });
+      const cssW = Math.floor(vp.width), cssH = Math.floor(vp.height);
       const wrap = document.createElement('div'); wrap.className = 'pdfpage';
       const cv = document.createElement('canvas'); const c2 = cv.getContext('2d');
-      const os = Math.min(window.devicePixelRatio || 1, 2);
       cv.width = Math.floor(vp.width * os); cv.height = Math.floor(vp.height * os);
-      cv.style.width = Math.floor(vp.width) + 'px'; cv.style.height = Math.floor(vp.height) + 'px';
+      cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
       wrap.appendChild(cv); inner.appendChild(wrap);
-      await page.render({ canvasContext: c2, viewport: vp, transform: os !== 1 ? [os, 0, 0, os, 0, 0] : null }).promise;
+      await page.render({ canvasContext: c2, viewport: vp, transform: [os, 0, 0, os, 0, 0] }).promise;
       try { await buildTextLayer(page, vp, wrap); } catch (e) {}
+      // annotation overlay for editing
+      const an = document.createElement('canvas'); an.className = 'annot';
+      const adpr = Math.min(window.devicePixelRatio || 1, 2);
+      an.width = Math.floor(cssW * adpr); an.height = Math.floor(cssH * adpr);
+      an.style.width = cssW + 'px'; an.style.height = cssH + 'px';
+      an.getContext('2d').setTransform(adpr, 0, 0, adpr, 0, 0);
+      wrap.appendChild(an);
+      pageMeta.push({ pageNum: n, cssW, cssH, pdfW: base.width, pdfH: base.height, annot: [], canvas: an, dpr: adpr });
+      bindAnnot(an, pageMeta.length - 1);
     }
+    inner.style.transform = 'none'; pcssScale = 1;
+    pdfBaseW = inner.offsetWidth; pdfBaseH = inner.offsetHeight;
+    sizer.style.width = pdfBaseW + 'px'; sizer.style.height = pdfBaseH + 'px';
     if (pdfSearchEl && pdfSearchEl.value.trim()) runPdfSearch(pdfSearchEl.value.trim());
+  }
+  // finger-anchored zoom: CSS transform (no re-render → no blink), sizer gives the scroll area
+  function setPdfZoom(ns, cx, cy, smooth) {
+    const inner = document.getElementById('pdfinner'), sizer = document.getElementById('pdfsizer');
+    if (!inner || !sizer) return;
+    ns = Math.max(0.5, Math.min(6, ns));
+    const r = pdfview.getBoundingClientRect();
+    if (cx == null) cx = r.left + r.width / 2;
+    if (cy == null) cy = r.top + r.height / 2;
+    const old = pcssScale || 1;
+    const px = (pdfview.scrollLeft + (cx - r.left)) / old;   // point under finger in natural coords
+    const py = (pdfview.scrollTop + (cy - r.top)) / old;
+    pcssScale = ns;
+    inner.style.transition = smooth ? 'transform .16s ease-out' : 'none';
+    inner.style.transform = 'scale(' + ns + ')';
+    sizer.style.width = (pdfBaseW * ns) + 'px'; sizer.style.height = (pdfBaseH * ns) + 'px';
+    pdfview.scrollLeft = px * ns - (cx - r.left);
+    pdfview.scrollTop = py * ns - (cy - r.top);
   }
   async function buildTextLayer(page, vp, wrap) {
     const tc = await page.getTextContent();
@@ -367,9 +405,8 @@
   pdfSearchEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (pdfHits.length) gotoHit(pdfHitIdx + 1); else runPdfSearch(pdfSearchEl.value.trim()); } });
   document.getElementById('pdfNext').onclick = () => gotoHit(pdfHitIdx + 1);
   document.getElementById('pdfPrev').onclick = () => gotoHit(pdfHitIdx - 1);
-  async function setPdfScale(s) { pdfScale = clamp(s, 0.5, 4); showLoading(true); await renderPdf(); showLoading(false); }
-  document.getElementById('zoomIn').onclick = () => { if (pdfDoc) setPdfScale(pdfScale + 0.25); };
-  document.getElementById('zoomOut').onclick = () => { if (pdfDoc) setPdfScale(pdfScale - 0.25); };
+  document.getElementById('zoomIn').onclick = () => { if (pdfDoc) setPdfZoom(pcssScale + 0.35, null, null, true); };
+  document.getElementById('zoomOut').onclick = () => { if (pdfDoc) setPdfZoom(pcssScale - 0.35, null, null, true); };
 
   // PDF gestures: double-tap zoom + long-press magnify
   function pdfCanvasAt(x, y) { let el = document.elementFromPoint(x, y); if (!el) return null; if (el.tagName === 'CANVAS') return el; const wrap = el.closest && el.closest('.pdfpage'); return wrap ? wrap.querySelector('canvas') : null; }
@@ -390,36 +427,115 @@
     if (pinching || pinchJustEnded) return;
     const now = Date.now();
     if (now - pLastTap < 300 && Math.abs(pStartX - pLX) < 40 && Math.abs(pStartY - pLY) < 40) {
-      pLastTap = 0; setPdfScale(pdfScale > 1.5 ? 1.1 : 2.4);   // double-tap zoom toggle
+      pLastTap = 0; setPdfZoom(pcssScale > 1.4 ? 1 : 2.2, pStartX, pStartY, true);   // double-tap zoom toggle at tap point
     } else { pLastTap = now; pLX = pStartX; pLY = pStartY; }
   }, { passive: true });
 
-  // PDF pinch-to-zoom (smooth, two-finger) — CSS scale live, re-render crisp on release
-  let pinching = false, pinchJustEnded = false, pd0 = 0, ps0 = 1, pcx = 0, pcy = 0, pmx = 0, pmy = 0, pcssScale = 1;
+  // PDF pinch-to-zoom — live CSS transform, anchored to the fingers, no re-render (so no blink / jump)
+  let pinching = false, pinchJustEnded = false, pd0 = 0, ps0 = 1, pcssScale = 1;
   const pinchDist = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
   pdfview.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 2) return;
     pinching = true; clearTimeout(pLong); hideLoupe();
-    const r = pdfview.getBoundingClientRect();
-    pd0 = pinchDist(e.touches); ps0 = pcssScale;
-    pmx = (e.touches[0].clientX + e.touches[1].clientX) / 2; pmy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    pcx = (pdfview.scrollLeft + pmx - r.left) / ps0; pcy = (pdfview.scrollTop + pmy - r.top) / ps0;
+    pd0 = pinchDist(e.touches) || 1; ps0 = pcssScale;
   }, { passive: true });
   pdfview.addEventListener('touchmove', (e) => {
     if (!pinching || e.touches.length !== 2) return;
     if (e.cancelable) e.preventDefault();
-    const r = pdfview.getBoundingClientRect();
-    let s = ps0 * pinchDist(e.touches) / (pd0 || 1); s = Math.max(0.4, Math.min(5, s)); pcssScale = s;
-    const inner = document.getElementById('pdfinner');
-    if (inner) { inner.style.transformOrigin = '0 0'; inner.style.transform = 'scale(' + s + ')'; }
-    pdfview.scrollLeft = pcx * s - (pmx - r.left); pdfview.scrollTop = pcy * s - (pmy - r.top);
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    setPdfZoom(ps0 * pinchDist(e.touches) / pd0, mx, my, false);
   }, { passive: false });
   pdfview.addEventListener('touchend', (e) => {
     if (!pinching || e.touches.length >= 2) return;
     pinching = false; pinchJustEnded = true; setTimeout(() => pinchJustEnded = false, 400);
-    const committed = pcssScale; pcssScale = 1;
-    if (Math.abs(committed - 1) > 0.02 && pdfDoc) setPdfScale(pdfScale * committed);
   }, { passive: true });
+
+  // ---------- PDF editing (pen / highlight / text → save via pdf-lib) ----------
+  const pdftools = document.getElementById('pdftools');
+  let lastPage = 0, drawing = false, curStroke = null, curMeta = null;
+  function natXY(an, meta, clientX, clientY) { const r = an.getBoundingClientRect(); return { x: (clientX - r.left) * (meta.cssW / r.width), y: (clientY - r.top) * (meta.cssH / r.height) }; }
+  function redrawAnnot(meta) {
+    const g = meta.canvas.getContext('2d'); g.clearRect(0, 0, meta.cssW, meta.cssH);
+    for (const a of meta.annot) {
+      if (a.type === 'text') { g.globalAlpha = 1; g.fillStyle = a.color; g.font = a.size + 'px sans-serif'; g.textBaseline = 'top';
+        a.str.split('\n').forEach((ln, i) => g.fillText(ln, a.x, a.y + i * a.size * 1.2)); continue; }
+      if (a.pts.length < 1) continue;
+      g.globalAlpha = a.type === 'hl' ? 0.32 : 1; g.strokeStyle = a.color; g.lineWidth = a.w; g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath(); g.moveTo(a.pts[0].x, a.pts[0].y); for (let i = 1; i < a.pts.length; i++) g.lineTo(a.pts[i].x, a.pts[i].y); g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
+  function bindAnnot(an, idx) {
+    an.addEventListener('touchstart', (e) => {
+      if (!editMode || e.touches.length > 1) return;
+      const meta = pageMeta[idx]; curMeta = meta; lastPage = idx;
+      const p = natXY(an, meta, e.touches[0].clientX, e.touches[0].clientY);
+      e.stopPropagation(); if (e.cancelable) e.preventDefault();
+      if (editTool === 'text') {
+        const str = prompt('Text to place on page:'); if (str && str.trim()) { meta.annot.push({ type: 'text', x: p.x, y: p.y, color: pColorEl.value, size: 18 }); meta.annot[meta.annot.length - 1].str = str; redrawAnnot(meta); }
+        return;
+      }
+      drawing = true; curStroke = { type: editTool, color: pColorEl.value, w: +pSizeEl.value * (editTool === 'hl' ? 3 : 1), pts: [p] };
+      meta.annot.push(curStroke); redrawAnnot(meta);
+    }, { passive: false });
+    an.addEventListener('touchmove', (e) => {
+      if (!editMode || !drawing || e.touches.length > 1 || !curStroke) return;
+      e.stopPropagation(); if (e.cancelable) e.preventDefault();
+      curStroke.pts.push(natXY(an, pageMeta[idx], e.touches[0].clientX, e.touches[0].clientY)); redrawAnnot(pageMeta[idx]);
+    }, { passive: false });
+    an.addEventListener('touchend', (e) => { if (!editMode) return; e.stopPropagation(); drawing = false; curStroke = null; }, { passive: false });
+  }
+  const pColorEl = document.getElementById('pColor'), pSizeEl = document.getElementById('pSize');
+  function toggleEdit(on) {
+    editMode = on; pdftools.classList.toggle('show', on);
+    document.getElementById('pdfEdit').classList.toggle('on', on);
+    pageMeta.forEach(m => m.canvas.classList.toggle('edit', on));
+    setStatus(on ? 'Edit mode · draw with finger, T to add text, then Save PDF' : 'PDF · pinch zoom · search above');
+  }
+  document.getElementById('pdfEdit').onclick = () => toggleEdit(!editMode);
+  document.getElementById('pDone').onclick = () => toggleEdit(false);
+  document.querySelectorAll('.ptool').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.ptool').forEach(x => x.classList.remove('on')); b.classList.add('on'); editTool = b.getAttribute('data-tool');
+  });
+  document.getElementById('pUndo').onclick = () => {
+    let m = pageMeta[lastPage];
+    if (!m || !m.annot.length) m = pageMeta.find(x => x.annot.length);
+    if (m && m.annot.length) { m.annot.pop(); redrawAnnot(m); }
+  };
+  document.getElementById('pClear').onclick = () => { pageMeta.forEach(m => { m.annot = []; redrawAnnot(m); }); setStatus('Annotations cleared'); };
+  function hexRgb(h) { const n = parseInt(h.replace('#', ''), 16); return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 }; }
+  document.getElementById('pSave').onclick = async () => {
+    if (typeof PDFLib === 'undefined' || !pdfBytes) { setStatus('Editor unavailable'); return; }
+    const hasAny = pageMeta.some(m => m.annot.length);
+    if (!hasAny) { setStatus('Nothing to save — draw or add text first'); return; }
+    showLoading(true); setStatus('Saving edited PDF…');
+    try {
+      const { PDFDocument, rgb, StandardFonts, LineCapStyle } = PDFLib;
+      const doc = await PDFDocument.load(pdfBytes);
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      const pages = doc.getPages();
+      for (const meta of pageMeta) {
+        const pg = pages[meta.pageNum - 1]; if (!pg) continue;
+        const sz = pg.getSize(), pw = sz.width, ph = sz.height, fx = pw / meta.cssW, fy = ph / meta.cssH;
+        for (const a of meta.annot) {
+          const c = hexRgb(a.color);
+          if (a.type === 'text') {
+            const lines = (a.str || '').split('\n');
+            lines.forEach((ln, i) => pg.drawText(ln, { x: a.x * fx, y: ph - (a.y + a.size + i * a.size * 1.2) * fy, size: a.size * fy, font, color: rgb(c.r, c.g, c.b) }));
+          } else {
+            const opt = { thickness: a.w * fx, color: rgb(c.r, c.g, c.b), opacity: a.type === 'hl' ? 0.32 : 1, lineCap: LineCapStyle.Round };
+            for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1].x * fx, y: ph - a.pts[i - 1].y * fy }, end: { x: a.pts[i].x * fx, y: ph - a.pts[i].y * fy }, ...opt });
+          }
+        }
+      }
+      const out = await doc.saveAsBase64();
+      const nm = pdfName.replace(/\.pdf$/i, '') + '-edited.pdf';
+      if (AB && AB.saveFile) AB.saveFile(nm, 'application/pdf', out);
+      else { const bin = atob(out); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); const u = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' })); const a = document.createElement('a'); a.href = u; a.download = nm; a.click(); }
+      setStatus('Saved ' + nm);
+    } catch (e) { setStatus('Save failed: ' + e.message); }
+    showLoading(false);
+  };
 
   // ---------- text / html ----------
   function showText(s) { hideAll(); textview.style.display = 'block'; textview.textContent = s; }
@@ -536,7 +652,7 @@
     try {
       const bin = atob(b64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const n = (name || '').toLowerCase();
-      if (n.endsWith('.pdf')) { clearImages(); openPdf(bytes); }
+      if (n.endsWith('.pdf')) { clearImages(); openPdf(bytes, name); }
       else if (n.endsWith('.xlsx') || n.endsWith('.xls') || n.endsWith('.xlsm')) { showSheet(); loadWorkbook(bytes, name); extractImages(bytes); }
       else if (n.endsWith('.csv') || n.endsWith('.tsv')) { clearImages(); loadCsv(new TextDecoder().decode(bytes), name); }
       else if (n.endsWith('.html') || n.endsWith('.htm')) { clearImages(); showHtml(new TextDecoder().decode(bytes)); }
