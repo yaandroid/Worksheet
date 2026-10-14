@@ -306,12 +306,11 @@
     showLoading(false);
   }
   async function renderPdf() {
-    pdfview.innerHTML = '<div id="pdfsizer"><div id="pdfinner"></div></div>';
+    pdfview.innerHTML = '<div id="pdfinner"></div>';
     pdfHits = []; pdfHitIdx = -1; pcssScale = 1; pageMeta = [];
-    const sizer = document.getElementById('pdfsizer');
     const inner = document.getElementById('pdfinner');
     const width = pdfview.clientWidth || window.innerWidth;
-    const os = Math.min((window.devicePixelRatio || 1) * 1.4, 2.5);   // oversample so moderate zoom stays sharp
+    const os = Math.min(window.devicePixelRatio || 1, 2);   // device-pixel oversample (proven, reliable)
     for (let n = 1; n <= pdfDoc.numPages; n++) {
       const page = await pdfDoc.getPage(n);
       const base = page.getViewport({ scale: 1 });
@@ -335,26 +334,22 @@
       pageMeta.push({ pageNum: n, cssW, cssH, pdfW: base.width, pdfH: base.height, annot: [], canvas: an, dpr: adpr });
       bindAnnot(an, pageMeta.length - 1);
     }
-    inner.style.transform = 'none'; pcssScale = 1;
-    pdfBaseW = inner.offsetWidth; pdfBaseH = inner.offsetHeight;
-    sizer.style.width = pdfBaseW + 'px'; sizer.style.height = pdfBaseH + 'px';
+    inner.style.zoom = ''; pcssScale = 1;
     if (pdfSearchEl && pdfSearchEl.value.trim()) runPdfSearch(pdfSearchEl.value.trim());
   }
-  // finger-anchored zoom: CSS transform (no re-render → no blink), sizer gives the scroll area
-  function setPdfZoom(ns, cx, cy, smooth) {
-    const inner = document.getElementById('pdfinner'), sizer = document.getElementById('pdfsizer');
-    if (!inner || !sizer) return;
+  // finger-anchored zoom via CSS `zoom` — keeps native scroll (so pages always render) and no white-out
+  function setPdfZoom(ns, cx, cy) {
+    const inner = document.getElementById('pdfinner');
+    if (!inner) return;
     ns = Math.max(0.5, Math.min(6, ns));
     const r = pdfview.getBoundingClientRect();
     if (cx == null) cx = r.left + r.width / 2;
     if (cy == null) cy = r.top + r.height / 2;
     const old = pcssScale || 1;
-    const px = (pdfview.scrollLeft + (cx - r.left)) / old;   // point under finger in natural coords
+    const px = (pdfview.scrollLeft + (cx - r.left)) / old;   // point under finger in unscaled coords
     const py = (pdfview.scrollTop + (cy - r.top)) / old;
     pcssScale = ns;
-    inner.style.transition = smooth ? 'transform .16s ease-out' : 'none';
-    inner.style.transform = 'scale(' + ns + ')';
-    sizer.style.width = (pdfBaseW * ns) + 'px'; sizer.style.height = (pdfBaseH * ns) + 'px';
+    inner.style.zoom = ns;
     pdfview.scrollLeft = px * ns - (cx - r.left);
     pdfview.scrollTop = py * ns - (cy - r.top);
   }
