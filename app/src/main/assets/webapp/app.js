@@ -426,6 +426,52 @@
   function showHtml(s) { hideAll(); htmlview.style.display = 'block'; htmlview.srcdoc = s; setStatus('HTML'); }
   function showMarkdown(s) { showHtml('<pre style="white-space:pre-wrap;font-family:sans-serif;padding:14px;font-size:15px;line-height:1.6">' + s.replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[m])) + '</pre>'); }
 
+  const DOC_CSS = '<style>' +
+    'html,body{margin:0;background:#525659}' +
+    '.page{max-width:820px;margin:14px auto;background:#fff;color:#1a1a1a;padding:48px 56px;box-shadow:0 2px 14px rgba(0,0,0,.4);border-radius:3px;font-family:Calibri,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.55;word-wrap:break-word}' +
+    '.page img{max-width:100%;height:auto}' +
+    '.page h1{font-size:26px;margin:.3em 0 .5em}.page h2{font-size:21px;margin:.4em 0}.page h3{font-size:18px}' +
+    '.page p{margin:.55em 0}.page table{border-collapse:collapse;width:100%;margin:.6em 0}.page td,.page th{border:1px solid #bbb;padding:5px 8px;vertical-align:top}' +
+    '.page ul,.page ol{margin:.5em 0 .5em 1.4em}.page a{color:#2B579A}' +
+    '@media(max-width:700px){.page{padding:26px 20px;margin:8px auto;font-size:15px}}' +
+    '</style><meta name="viewport" content="width=device-width,initial-scale=1">';
+
+  function openDocx(bytes, name) {
+    hideAll(); showLoading(true); setStatus('Opening Word…');
+    if (typeof mammoth === 'undefined') { showLoading(false); showText('Word viewer unavailable.'); return; }
+    mammoth.convertToHtml({ arrayBuffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) })
+      .then((res) => { showHtml(DOC_CSS + '<div class="page">' + (res.value || '<p>(empty document)</p>') + '</div>'); setStatus('Word · ' + name); })
+      .catch(() => showText('Could not render ' + name))
+      .then(() => showLoading(false));
+  }
+
+  async function openPptx(bytes, name) {
+    hideAll(); showLoading(true); setStatus('Opening PowerPoint…');
+    if (typeof JSZip === 'undefined') { showLoading(false); showText('Viewer unavailable.'); return; }
+    try {
+      const zip = await JSZip.loadAsync(bytes);
+      const slideNames = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+        .sort((a, b) => (+a.match(/(\d+)/)[1]) - (+b.match(/(\d+)/)[1]));
+      let body = '';
+      for (let i = 0; i < slideNames.length; i++) {
+        const xml = await zip.files[slideNames[i]].async('string');
+        const paras = xml.split(/<a:p[ >]/).slice(1).map(seg => {
+          const runs = [...seg.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map(m => m[1]).join('');
+          return runs;
+        }).filter(t => t.trim());
+        const esc = (t) => t.replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[m]));
+        let inner = '<div class="snum">Slide ' + (i + 1) + '</div>';
+        if (paras.length) { inner += '<h2>' + esc(paras[0]) + '</h2>'; if (paras.length > 1) inner += paras.slice(1).map(p => '<p>' + esc(p) + '</p>').join(''); }
+        else inner += '<p style="color:#888">(no text — tap Images above for pictures)</p>';
+        body += '<div class="slide">' + inner + '</div>';
+      }
+      if (!body) body = '<p>No slides found.</p>';
+      const css = '<style>html,body{margin:0;background:#525659}.slide{max-width:820px;margin:14px auto;background:#fff;color:#1a1a1a;padding:34px 40px;box-shadow:0 2px 14px rgba(0,0,0,.4);border-radius:3px;font-family:Calibri,"Segoe UI",sans-serif;min-height:380px}.slide h2{font-size:24px;color:#16233F;margin:.1em 0 .5em;border-bottom:3px solid #E8A33D;padding-bottom:8px}.slide p{font-size:17px;line-height:1.5;margin:.5em 0}.snum{font-size:12px;color:#8a93a3;margin-bottom:6px}@media(max-width:700px){.slide{padding:22px 18px;margin:8px auto}}</style><meta name="viewport" content="width=device-width,initial-scale=1">';
+      showHtml(css + body); setStatus('PowerPoint · ' + slideNames.length + ' slides · ' + name);
+    } catch (e) { showText('Could not render ' + name); }
+    showLoading(false);
+  }
+
   // ---------- embedded images ----------
   let images = [];
   const btnImages = document.getElementById('btnImages');
@@ -495,7 +541,8 @@
       else if (n.endsWith('.csv') || n.endsWith('.tsv')) { clearImages(); loadCsv(new TextDecoder().decode(bytes), name); }
       else if (n.endsWith('.html') || n.endsWith('.htm')) { clearImages(); showHtml(new TextDecoder().decode(bytes)); }
       else if (n.endsWith('.md') || n.endsWith('.markdown')) { clearImages(); showMarkdown(new TextDecoder().decode(bytes)); }
-      else if (n.endsWith('.docx') || n.endsWith('.pptx')) { showText('Opened ' + name + '.\n\nTap “Images” above to see pictures inside this file.\nFull Word/PowerPoint page view is coming next.'); extractImages(bytes); }
+      else if (n.endsWith('.docx')) { openDocx(bytes, name); extractImages(bytes); }
+      else if (n.endsWith('.pptx')) { openPptx(bytes, name); extractImages(bytes); }
       else if (n.endsWith('.doc') || n.endsWith('.ppt')) { clearImages(); showText('Old-format ' + name + '. Save as .docx/.pptx or PDF to open here.'); }
       else { clearImages(); showText(new TextDecoder().decode(bytes)); }
     } catch (e) { showText('Could not open ' + name + '\n' + e.message); }
