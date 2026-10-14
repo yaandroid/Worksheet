@@ -42,11 +42,11 @@ jobs:
         with:
           name: BRAHM-Office-APK
           path: out/BRAHM-Office-1.1.apk
-      - name: Publish to Release
+      - name: Publish to Release (single, always-updated)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1-${{ github.run_number }}
-          name: BRAHM Office 1.1 (build ${{ github.run_number }})
+          tag_name: latest
+          name: BRAHM Office (latest)
           files: out/BRAHM-Office-1.1.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

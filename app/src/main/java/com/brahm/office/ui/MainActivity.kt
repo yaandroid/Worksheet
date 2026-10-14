@@ -39,8 +39,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var adapter: FileAdapter
     private lateinit var empty: TextView
-    private lateinit var chipsBox: LinearLayout
-    private lateinit var chipsScroll: View
+    private lateinit var gridTiles: android.widget.GridLayout
+    private lateinit var sectionLabel: TextView
+    private lateinit var tabsView: TabLayout
     private var tab = 0
     private var query = ""
     private var all: List<FileItem> = emptyList()
@@ -66,23 +67,20 @@ class MainActivity : AppCompatActivity() {
 
         empty = findViewById(R.id.empty)
         val list = findViewById<RecyclerView>(R.id.list)
-        chipsBox = findViewById(R.id.chips)
-        chipsScroll = findViewById(R.id.chipsScroll)
+        gridTiles = findViewById(R.id.gridTiles)
+        sectionLabel = findViewById(R.id.sectionLabel)
+        tabsView = findViewById(R.id.tabs)
 
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(toolbar) { v, insets ->
             val b = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             v.setPadding(v.paddingLeft, b.top, v.paddingRight, 0); insets
-        }
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(list) { v, insets ->
-            val b = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, b.bottom); insets
         }
 
         list.layoutManager = LinearLayoutManager(this)
         adapter = FileAdapter(emptyList()) { open(it) }
         list.adapter = adapter
 
-        buildChips()
+        buildTiles()
 
         findViewById<TextInputEditText>(R.id.searchBox).addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { query = s?.toString() ?: ""; refresh() }
@@ -92,12 +90,12 @@ class MainActivity : AppCompatActivity() {
 
         empty.setOnClickListener { if (tab == 1 && !hasFullAccess() && TreeRepo.getTree(this) == null) chooseFolder() else pickFile() }
 
-        findViewById<TabLayout>(R.id.tabs).addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(t: TabLayout.Tab) { tab = t.position; updateChipsVisibility(); reload() }
+        tabsView.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(t: TabLayout.Tab) { tab = t.position; updateSectionLabel(); reload() }
             override fun onTabUnselected(t: TabLayout.Tab) {}
             override fun onTabReselected(t: TabLayout.Tab) {}
         })
-        updateChipsVisibility()
+        updateSectionLabel()
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
@@ -108,28 +106,90 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() { super.onResume(); reload() }
 
-    // ---------- chips ----------
-    private val chipDefs = listOf("ALL" to "All", "PDF" to "PDF", "EXCEL" to "Excel", "WORD" to "Word", "PPT" to "PPT")
-    private fun buildChips() {
-        chipsBox.removeAllViews()
-        for ((key, label) in chipDefs) {
-            val b = Button(this)
-            b.text = label
-            b.isAllCaps = false
-            b.setPadding(28, 6, 28, 6)
-            b.minWidth = 0; b.minHeight = 0
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.marginEnd = 10; b.layoutParams = lp
-            styleChip(b, key == typeFilter)
-            b.setOnClickListener { typeFilter = key; buildChips(); refresh() }
-            chipsBox.addView(b)
+    // ---------- dashboard tile grid ----------
+    private data class Tile(val icon: String, val label: String, val color: String, val action: String)
+    private val tileDefs = listOf(
+        Tile("📄", "PDF", "#D64541", "type:PDF"),
+        Tile("📊", "Excel", "#1F9D63", "type:EXCEL"),
+        Tile("📝", "Word", "#2B579A", "type:WORD"),
+        Tile("📽", "PPT", "#D24726", "type:PPT"),
+        Tile("🗂", "All files", "#5B6472", "type:ALL"),
+        Tile("📂", "Open", "#E8A33D", "open"),
+        Tile("➕", "New sheet", "#16233F", "new"),
+        Tile("📷", "Scan", "#8E44AD", "scan")
+    )
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+    private fun buildTiles() {
+        gridTiles.removeAllViews()
+        val cols = 4
+        for ((i, t) in tileDefs.withIndex()) {
+            val tile = LinearLayout(this)
+            tile.orientation = LinearLayout.VERTICAL
+            tile.gravity = android.view.Gravity.CENTER
+            tile.setPadding(dp(4), dp(10), dp(4), dp(10))
+
+            val iconBox = TextView(this)
+            iconBox.text = t.icon
+            iconBox.textSize = 22f
+            iconBox.gravity = android.view.Gravity.CENTER
+            val d = android.graphics.drawable.GradientDrawable()
+            d.cornerRadius = dp(16).toFloat()
+            d.setColor(Color.parseColor(t.color))
+            iconBox.background = d
+            val ib = LinearLayout.LayoutParams(dp(52), dp(52))
+            iconBox.layoutParams = ib
+
+            val lbl = TextView(this)
+            lbl.text = t.label
+            lbl.textSize = 11.5f
+            lbl.gravity = android.view.Gravity.CENTER
+            lbl.setTextColor(Color.parseColor("#16233F"))
+            val lp2 = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp2.topMargin = dp(6)
+            lbl.layoutParams = lp2
+
+            tile.addView(iconBox); tile.addView(lbl)
+            tile.setOnClickListener { onTile(t) }
+            tile.isClickable = true
+            tile.background = resolveRipple()
+
+            val glp = android.widget.GridLayout.LayoutParams()
+            glp.width = 0; glp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            glp.columnSpec = android.widget.GridLayout.spec(i % cols, 1f)
+            glp.rowSpec = android.widget.GridLayout.spec(i / cols)
+            glp.setMargins(dp(4), dp(4), dp(4), dp(4))
+            tile.layoutParams = glp
+            gridTiles.addView(tile)
         }
     }
-    private fun styleChip(b: Button, active: Boolean) {
-        if (active) { b.setBackgroundColor(Color.parseColor("#E8A33D")); b.setTextColor(Color.parseColor("#2a1d00")) }
-        else { b.setBackgroundColor(Color.parseColor("#24324f")); b.setTextColor(Color.WHITE) }
+    private fun resolveRipple(): android.graphics.drawable.Drawable? {
+        return try {
+            val ta = obtainStyledAttributes(intArrayOf(android.R.attr.selectableItemBackgroundBorderless))
+            val d = ta.getDrawable(0); ta.recycle(); d
+        } catch (e: Exception) { null }
     }
-    private fun updateChipsVisibility() { chipsScroll.visibility = if (tab == 1) View.VISIBLE else View.GONE }
+    private fun onTile(t: Tile) {
+        when {
+            t.action.startsWith("type:") -> {
+                typeFilter = t.action.substring(5)
+                tabsView.getTabAt(1)?.select()   // switch to All; its listener reloads
+                tab = 1; updateSectionLabel(); reload()
+            }
+            t.action == "open" -> pickFile()
+            t.action == "new" -> startActivity(Intent(this, DocActivity::class.java))
+            t.action == "scan" -> AlertDialog.Builder(this)
+                .setTitle("Scan → PDF")
+                .setMessage("Camera document scanning is coming in the next update — capture multiple pages and save as a PDF.")
+                .setPositiveButton("OK", null).show()
+        }
+    }
+    private fun updateSectionLabel() {
+        sectionLabel.text = when (tab) {
+            1 -> "All files" + (if (typeFilter != "ALL") " · ${typeFilter.lowercase().replaceFirstChar { it.uppercase() }}" else "")
+            2 -> "Tools"
+            else -> "Recent"
+        }
+    }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean { menuInflater.inflate(R.menu.main, menu); return true }
     override fun onOptionsItemSelected(item: MenuItem): Boolean {

@@ -16,82 +16,100 @@
         app:title="BRAHM Office"
         app:titleTextColor="@color/white" />
 
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_margin="12dp"
-        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/searchBox"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/search_hint"
-            android:imeOptions="actionSearch"
-            android:inputType="text"
-            android:maxLines="1" />
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <com.google.android.material.tabs.TabLayout
-        android:id="@+id/tabs"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        app:tabMode="fixed">
-        <com.google.android.material.tabs.TabItem
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="@string/tab_recent" />
-        <com.google.android.material.tabs.TabItem
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="@string/tab_all" />
-        <com.google.android.material.tabs.TabItem
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="@string/tab_tools" />
-    </com.google.android.material.tabs.TabLayout
-
-    >
-
-    <HorizontalScrollView
-        android:id="@+id/chipsScroll"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:scrollbars="none"
-        android:paddingHorizontal="8dp"
-        android:paddingVertical="6dp">
-        <LinearLayout
-            android:id="@+id/chips"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal" />
-    </HorizontalScrollView>
-
-    <FrameLayout
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:background="@color/brahm_bg"
+        android:clipToPadding="false"
+        android:fillViewport="true">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/list"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingBottom="16dp" />
-
-        <TextView
-            android:id="@+id/empty"
-            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:padding="24dp"
-            android:gravity="center"
-            android:text="@string/no_files"
-            android:textColor="@color/text_muted_light"
-            android:visibility="gone" />
-    </FrameLayout>
+            android:orientation="vertical">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="12dp"
+                android:layout_marginTop="12dp"
+                app:boxBackgroundColor="@color/white"
+                app:startIconDrawable="@android:drawable/ic_menu_search"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/searchBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/search_hint"
+                    android:imeOptions="actionSearch"
+                    android:inputType="text"
+                    android:maxLines="1" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <GridLayout
+                android:id="@+id/gridTiles"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:columnCount="4"
+                android:layout_marginHorizontal="6dp"
+                android:layout_marginTop="6dp" />
+
+            <TextView
+                android:id="@+id/sectionLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="2dp"
+                android:text="@string/tab_recent"
+                android:textStyle="bold"
+                android:textColor="@color/brahm_navy"
+                android:textSize="15sp" />
+
+            <com.google.android.material.tabs.TabLayout
+                android:id="@+id/tabs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:tabMode="fixed"
+                app:tabGravity="fill">
+                <com.google.android.material.tabs.TabItem
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="@string/tab_recent" />
+                <com.google.android.material.tabs.TabItem
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="@string/tab_all" />
+                <com.google.android.material.tabs.TabItem
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="@string/tab_tools" />
+            </com.google.android.material.tabs.TabLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:nestedScrollingEnabled="false"
+                android:clipToPadding="false"
+                android:paddingBottom="12dp" />
+
+            <TextView
+                android:id="@+id/empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="24dp"
+                android:gravity="center"
+                android:text="@string/no_files"
+                android:textColor="@color/text_muted_light"
+                android:visibility="gone" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
         android:paddingVertical="6dp"
+        android:background="@color/brahm_navy"
         android:text="@string/developed_by"
         android:textColor="@color/text_muted_light"
         android:textSize="11sp" />
