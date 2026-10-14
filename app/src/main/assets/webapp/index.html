@@ -50,6 +50,8 @@
   .chartbtns{display:flex;gap:6px;flex-wrap:wrap}
   .ctype.on{background:var(--saffron);color:#2a1d00}
   #chartcv{flex:1;width:100%;background:#fff;touch-action:none}
+  #ocrtext{margin:0;padding:14px;overflow:auto;white-space:pre-wrap;color:#eaeef5;font-size:14px;line-height:1.55;max-height:70vh;-webkit-user-select:text;user-select:text}
+  .olang.on{background:var(--saffron);color:#2a1d00}
 </style>
 </head>
 <body>
@@ -70,6 +72,7 @@
       <button class="btn" id="zoomOut">−</button>
       <button class="btn" id="zoomIn">+</button>
       <button class="btn" id="pdfEdit" title="Edit PDF">✏️ Edit</button>
+      <button class="btn" id="pdfOcr" title="Read text (OCR)">🔎 OCR</button>
     </div>
   </div>
 
@@ -152,6 +155,21 @@
         </div>
       </div>
       <canvas id="chartcv"></canvas>
+    </div>
+  </div>
+
+  <div class="chartmodal" id="ocrmodal">
+    <div class="chartbox">
+      <div class="charthead">
+        <span id="ocrhead">OCR text</span>
+        <div class="chartbtns">
+          <button class="fbtn olang on" data-ol="hi">हिंदी</button>
+          <button class="fbtn olang" data-ol="en">English</button>
+          <button class="fbtn" id="ocrCopy">Copy</button>
+          <button class="fbtn" id="ocrClose">✕</button>
+        </div>
+      </div>
+      <pre id="ocrtext"></pre>
     </div>
   </div>
 

@@ -167,6 +167,30 @@ class DocActivity : AppCompatActivity() {
                 try { savePicker.launch(name) } catch (_: Exception) {}
             }
         }
+        /** On-device OCR of a PNG (base64). lang: "hi" → Devanagari, else Latin. */
+        @JavascriptInterface fun ocr(base64Png: String, lang: String) {
+            try {
+                val data = Base64.decode(base64Png, Base64.DEFAULT)
+                val bmp = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.size)
+                if (bmp == null) { ocrBack("", "decode failed"); return }
+                val img = com.google.mlkit.vision.common.InputImage.fromBitmap(bmp, 0)
+                val rec = if (lang == "hi")
+                    com.google.mlkit.vision.text.TextRecognition.getClient(
+                        com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions.Builder().build())
+                else
+                    com.google.mlkit.vision.text.TextRecognition.getClient(
+                        com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
+                rec.process(img)
+                    .addOnSuccessListener { r -> ocrBack(r.text, "") }
+                    .addOnFailureListener { e -> ocrBack("", e.message ?: "ocr failed") }
+            } catch (e: Exception) { ocrBack("", e.message ?: "error") }
+        }
+    }
+
+    private fun ocrBack(text: String, err: String) {
+        val t = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val e = err.replace("\\", "").replace("\"", "")
+        runOnUiThread { web.evaluateJavascript("window.BrahmOcrResult(\"$t\",\"$e\");", null) }
     }
 
     override fun onBackPressed() {

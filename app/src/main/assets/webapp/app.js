@@ -537,6 +537,48 @@
     showLoading(false);
   };
 
+  // ---------- OCR (on-device, via Android ML Kit) ----------
+  const ocrModal = document.getElementById('ocrmodal');
+  let ocrB64 = null, ocrLang = 'hi';
+  function centeredPageIdx() {
+    const r = pdfview.getBoundingClientRect(); const cy = r.top + r.height / 2; let best = 0, bd = 1e12;
+    pageMeta.forEach((m, i) => { const pr = m.canvas.getBoundingClientRect(); const mid = (pr.top + pr.bottom) / 2; const d = Math.abs(mid - cy); if (d < bd) { bd = d; best = i; } });
+    return best;
+  }
+  function runOcr(lang) {
+    if (!ocrB64) return;
+    ocrLang = lang;
+    document.querySelectorAll('.olang').forEach(x => x.classList.toggle('on', x.getAttribute('data-ol') === lang));
+    document.getElementById('ocrtext').textContent = 'Reading… (' + (lang === 'hi' ? 'हिंदी' : 'English') + ')';
+    if (AB && AB.ocr) AB.ocr(ocrB64, lang);
+    else document.getElementById('ocrtext').textContent = 'OCR needs the installed app.';
+  }
+  document.getElementById('pdfOcr').onclick = () => {
+    if (!pdfDoc || !pageMeta.length) { setStatus('Open a PDF first'); return; }
+    const m = pageMeta[centeredPageIdx()];
+    const cv = m.canvas.parentElement.querySelector('canvas:not(.annot)');
+    if (!cv) { setStatus('Nothing to read'); return; }
+    try { ocrB64 = cv.toDataURL('image/png').split(',')[1]; }
+    catch (e) { setStatus('OCR failed to capture page'); return; }
+    document.getElementById('ocrhead').textContent = 'OCR · page ' + m.pageNum;
+    ocrModal.classList.add('show');
+    runOcr('hi');
+  };
+  window.BrahmOcrResult = function (b64text, err) {
+    if (err) { document.getElementById('ocrtext').textContent = 'OCR error: ' + err; return; }
+    let txt = '';
+    try { txt = decodeURIComponent(escape(atob(b64text))); } catch (e) { try { txt = atob(b64text); } catch (_) {} }
+    document.getElementById('ocrtext').textContent = txt.trim() || '(no text found on this page)';
+  };
+  document.querySelectorAll('.olang').forEach(b => b.onclick = () => runOcr(b.getAttribute('data-ol')));
+  document.getElementById('ocrClose').onclick = () => ocrModal.classList.remove('show');
+  ocrModal.addEventListener('click', (e) => { if (e.target === ocrModal) ocrModal.classList.remove('show'); });
+  document.getElementById('ocrCopy').onclick = () => {
+    const t = document.getElementById('ocrtext');
+    try { const rng = document.createRange(); rng.selectNodeContents(t); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rng); document.execCommand('copy'); sel.removeAllRanges(); setStatus('OCR text copied'); }
+    catch (e) { setStatus('Select the text to copy'); }
+  };
+
   // ---------- text / html ----------
   function showText(s) { hideAll(); textview.style.display = 'block'; textview.textContent = s; }
   function showHtml(s) { hideAll(); htmlview.style.display = 'block'; htmlview.srcdoc = s; setStatus('HTML'); }
