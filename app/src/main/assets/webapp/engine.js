@@ -60,7 +60,7 @@
     if (this.visiting.has(k)) return REF;
     this.visiting.add(k);
     let res;
-    try { if (cell.ast === undefined) { try { cell.ast = new Parser(cell.input.slice(1)).parse(); } catch (e) { cell.ast = null; } } res = cell.ast ? new Eval(this).eval(cell.ast) : VALUE; }
+    try { if (cell.ast === undefined) { try { cell.ast = new Parser(cell.input.slice(1)).parse(); } catch (e) { cell.ast = null; } } res = cell.ast ? new Eval(this, k).eval(cell.ast) : VALUE; }
     catch (e) { res = VALUE; } finally { this.visiting.delete(k); }
     this.cache.set(k, res); return res;
   };
@@ -68,7 +68,7 @@
   function literal(s) { const d = Number(s); if (s.trim() !== '' && !isNaN(d)) return Num(d); if (/^true$/i.test(s)) return Bool(true); if (/^false$/i.test(s)) return Bool(false); return Str(s); }
 
   // ---- Evaluator ----
-  function Eval(sheet) { this.sheet = sheet; }
+  function Eval(sheet, curKey) { this.sheet = sheet; if (curKey != null) { this.curR = Math.floor(curKey / MAX_COLS); this.curC = curKey % MAX_COLS; } }
   Eval.prototype.eval = function (n) {
     switch (n.k) {
       case 'num': return Num(n.v); case 'str': return Str(n.v); case 'bool': return Bool(n.v);
@@ -190,6 +190,76 @@
   F('FV', (a, ev) => { const r = asNum(ev.eval(a[0])), n = asNum(ev.eval(a[1])), pmt = asNum(ev.eval(a[2])), pv = a.length > 3 ? asNum(ev.eval(a[3])) : 0; return r === 0 ? Num(-(pv + pmt * n)) : Num(-(pv * Math.pow(1 + r, n) + pmt * (Math.pow(1 + r, n) - 1) / r)); });
   F('PV', (a, ev) => { const r = asNum(ev.eval(a[0])), n = asNum(ev.eval(a[1])), pmt = asNum(ev.eval(a[2])), fv = a.length > 3 ? asNum(ev.eval(a[3])) : 0; return r === 0 ? Num(-(fv + pmt * n)) : Num(-(fv + pmt * (Math.pow(1 + r, n) - 1) / r) / Math.pow(1 + r, n)); });
   F('NPV', (a, ev) => { const r = asNum(ev.eval(a[0])); let s = 0, t = 1; for (let i = 1; i < a.length; i++) for (const v of ev.flatten(a[i])) { s += asNum(v) / Math.pow(1 + r, t); t++; } return Num(s); });
+
+  // ---- extra math ----
+  F('GCD', (a, ev) => { const n = ev.numbers(a).map(x => Math.abs(Math.trunc(x))); const g = (x, y) => y ? g(y, x % y) : x; return Num(n.reduce((x, y) => g(x, y), 0)); });
+  F('LCM', (a, ev) => { const n = ev.numbers(a).map(x => Math.abs(Math.trunc(x))); const g = (x, y) => y ? g(y, x % y) : x; return Num(n.reduce((x, y) => (x && y) ? x / g(x, y) * y : 0, 1)); });
+  F('FACT', (a, ev) => { let x = Math.trunc(asNum(ev.eval(a[0]))); if (x < 0) return NUM; let r = 1; for (let i = 2; i <= x; i++) r *= i; return Num(r); });
+  F('COMBIN', (a, ev) => { const n = Math.trunc(asNum(ev.eval(a[0]))), k = Math.trunc(asNum(ev.eval(a[1]))); if (k < 0 || k > n) return NUM; let r = 1; for (let i = 0; i < k; i++) r = r * (n - i) / (i + 1); return Num(Math.round(r)); });
+  F('PERMUT', (a, ev) => { const n = Math.trunc(asNum(ev.eval(a[0]))), k = Math.trunc(asNum(ev.eval(a[1]))); if (k < 0 || k > n) return NUM; let r = 1; for (let i = 0; i < k; i++) r *= (n - i); return Num(r); });
+  F('QUOTIENT', (a, ev) => { const d = asNum(ev.eval(a[1])); if (d === 0) return DIV0; return Num(Math.trunc(asNum(ev.eval(a[0])) / d)); });
+  F('EVEN', (a, ev) => { const x = asNum(ev.eval(a[0])); return Num(Math.sign(x || 1) * Math.ceil(Math.abs(x) / 2) * 2); });
+  F('ODD', (a, ev) => { const x = asNum(ev.eval(a[0])); const s = Math.sign(x || 1); let r = Math.ceil(Math.abs(x)); if (r % 2 === 0) r++; return Num(s * r); });
+  F('MROUND', (a, ev) => { const x = asNum(ev.eval(a[0])), m = asNum(ev.eval(a[1])); return m === 0 ? Num(0) : Num(Math.round(x / m) * m); });
+  F('SINH', (a, ev) => Num(Math.sinh(asNum(ev.eval(a[0]))))); F('COSH', (a, ev) => Num(Math.cosh(asNum(ev.eval(a[0]))))); F('TANH', (a, ev) => Num(Math.tanh(asNum(ev.eval(a[0])))));
+  // ---- multi-criteria aggregates ----
+  function ifsLoop(a, ev, start) { const first = ev.flatten(a[start]); const n = first.length; const keep = []; for (let i = 0; i < n; i++) { let ok = true; for (let j = start + 1; j + 1 < a.length; j += 2) { const cr = ev.flatten(a[j]); if (i >= cr.length || !matches(cr[i], ev.eval(a[j + 1]))) { ok = false; break; } } if (ok) keep.push(i); } return { first, keep }; }
+  F('SUMIFS', (a, ev) => { const { first, keep } = ifsLoop(a, ev, 0); let s = 0; for (const i of keep) s += asNum(first[i]); return Num(s); });
+  F('COUNTIFS', (a, ev) => { const first = ev.flatten(a[0]); let c = 0; for (let i = 0; i < first.length; i++) { let ok = true; for (let j = 0; j + 1 < a.length; j += 2) { const cr = ev.flatten(a[j]); if (i >= cr.length || !matches(cr[i], ev.eval(a[j + 1]))) { ok = false; break; } } if (ok) c++; } return Num(c); });
+  F('AVERAGEIFS', (a, ev) => { const { first, keep } = ifsLoop(a, ev, 0); if (!keep.length) return DIV0; let s = 0; for (const i of keep) s += asNum(first[i]); return Num(s / keep.length); });
+  F('MAXIFS', (a, ev) => { const { first, keep } = ifsLoop(a, ev, 0); let m = -Infinity; for (const i of keep) m = Math.max(m, asNum(first[i])); return Num(keep.length ? m : 0); });
+  F('MINIFS', (a, ev) => { const { first, keep } = ifsLoop(a, ev, 0); let m = Infinity; for (const i of keep) m = Math.min(m, asNum(first[i])); return Num(keep.length ? m : 0); });
+  // ---- extra stats ----
+  F('AVERAGEA', (a, ev) => { let s = 0, c = 0; for (const x of a) for (const v of ev.flatten(x)) { if (v.t === 'blank') continue; s += asNum(v); c++; } return c ? Num(s / c) : DIV0; });
+  F('GEOMEAN', (a, ev) => { const n = ev.numbers(a); if (!n.length) return NUM; let p = 1; for (const x of n) { if (x <= 0) return NUM; p *= x; } return Num(Math.pow(p, 1 / n.length)); });
+  F('RANK', (a, ev) => { const v = asNum(ev.eval(a[0])); const arr = ev.flatten(a[1]).filter(x => x.t === 'num').map(x => x.n); const asc = a.length > 2 && truthy(ev.eval(a[2])); let r = 1; for (const x of arr) { if (asc ? x < v : x > v) r++; } return Num(r); });
+  F('PERCENTILE', (a, ev) => { const n = ev.flatten(a[0]).filter(x => x.t === 'num').map(x => x.n).sort((x, y) => x - y); if (!n.length) return NUM; const p = asNum(ev.eval(a[1])); const idx = p * (n.length - 1); const lo = Math.floor(idx), hi = Math.ceil(idx); return Num(n[lo] + (n[hi] - n[lo]) * (idx - lo)); });
+  F('QUARTILE', (a, ev) => { const n = ev.flatten(a[0]).filter(x => x.t === 'num').map(x => x.n).sort((x, y) => x - y); if (!n.length) return NUM; const q = asNum(ev.eval(a[1])); const p = q / 4; const idx = p * (n.length - 1); const lo = Math.floor(idx), hi = Math.ceil(idx); return Num(n[lo] + (n[hi] - n[lo]) * (idx - lo)); });
+  // ---- reference ----
+  F('ROWS', (a) => { const rg = a[0]; return rg && rg.k === 'range' ? Num(rg.r2 - rg.r1 + 1) : Num(1); });
+  F('COLUMNS', (a) => { const rg = a[0]; return rg && rg.k === 'range' ? Num(rg.c2 - rg.c1 + 1) : Num(1); });
+  F('ROW', (a, ev) => { if (!a.length) return Num((ev.curR || 0) + 1); const rg = a[0]; return Num((rg.k === 'range' ? rg.r1 : (rg.k === 'ref' ? rg.r : 0)) + 1); });
+  F('COLUMN', (a, ev) => { if (!a.length) return Num((ev.curC || 0) + 1); const rg = a[0]; return Num((rg.k === 'range' ? rg.c1 : (rg.k === 'ref' ? rg.c : 0)) + 1); });
+  F('LOOKUP', (a, ev) => { const k = ev.eval(a[0]); const rg = a[1]; if (rg.k !== 'range') return NA; const vals = ev.flattenRange(rg); let idx = -1; for (let i = 0; i < vals.length; i++) { if (vals[i].t === 'num' && k.t === 'num' ? vals[i].n <= k.n : asStr(vals[i]).toLowerCase() <= asStr(k).toLowerCase()) idx = i; } if (idx < 0) return NA; if (a.length > 2 && a[2].k === 'range') { const res = ev.flattenRange(a[2]); return idx < res.length ? res[idx] : NA; } return vals[idx]; });
+  F('XLOOKUP', (a, ev) => { const k = ev.eval(a[0]); const lr = a[1], rr = a[2]; if (lr.k !== 'range' || rr.k !== 'range') return NA; const lv = ev.flattenRange(lr), rv = ev.flattenRange(rr); for (let i = 0; i < lv.length; i++) if (eq(lv[i], k)) return i < rv.length ? rv[i] : NA; return a.length > 3 ? ev.eval(a[3]) : NA; });
+  // ---- extra text ----
+  F('REPLACE', (a, ev) => { const s = asStr(ev.eval(a[0])); const st = asNum(ev.eval(a[1])) - 1; const len = asNum(ev.eval(a[2])); const nw = asStr(ev.eval(a[3])); return Str(s.slice(0, st) + nw + s.slice(st + len)); });
+  F('CHAR', (a, ev) => Str(String.fromCharCode(asNum(ev.eval(a[0]))))); F('CODE', (a, ev) => { const s = asStr(ev.eval(a[0])); return s ? Num(s.charCodeAt(0)) : VALUE; });
+  F('UNICHAR', (a, ev) => Str(String.fromCodePoint(asNum(ev.eval(a[0]))))); F('UNICODE', (a, ev) => { const s = asStr(ev.eval(a[0])); return s ? Num(s.codePointAt(0)) : VALUE; });
+  F('CLEAN', (a, ev) => Str(asStr(ev.eval(a[0])).replace(/[\x00-\x1F\x7F]/g, '')));
+  F('FIXED', (a, ev) => { const x = asNum(ev.eval(a[0])); const d = a.length > 1 ? asNum(ev.eval(a[1])) : 2; const noComma = a.length > 2 && truthy(ev.eval(a[2])); const s = x.toFixed(Math.max(0, d)); return Str(noComma ? s : (+s).toLocaleString('en-IN', { minimumFractionDigits: Math.max(0, d), maximumFractionDigits: Math.max(0, d) })); });
+  F('NUMBERVALUE', (a, ev) => { const d = parseFloat(asStr(ev.eval(a[0])).replace(/,/g, '')); return isNaN(d) ? VALUE : Num(d); });
+  F('T', (a, ev) => { const v = ev.eval(a[0]); return v.t === 'str' ? v : Str(''); });
+  // ---- date & time (serial = days since 1899-12-30) ----
+  const EPOCH = Date.UTC(1899, 11, 30);
+  const toSerial = (ms) => (ms - EPOCH) / 86400000;
+  const fromSerial = (n) => new Date(EPOCH + Math.round(n * 86400000));
+  F('TODAY', () => { const d = new Date(); return Num(Math.floor(toSerial(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())))); });
+  F('NOW', () => { const d = new Date(); return Num(toSerial(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()))); });
+  F('DATE', (a, ev) => Num(Math.floor(toSerial(Date.UTC(asNum(ev.eval(a[0])), asNum(ev.eval(a[1])) - 1, asNum(ev.eval(a[2])))))));
+  F('YEAR', (a, ev) => Num(fromSerial(asNum(ev.eval(a[0]))).getUTCFullYear()));
+  F('MONTH', (a, ev) => Num(fromSerial(asNum(ev.eval(a[0]))).getUTCMonth() + 1));
+  F('DAY', (a, ev) => Num(fromSerial(asNum(ev.eval(a[0]))).getUTCDate()));
+  F('HOUR', (a, ev) => { const f = asNum(ev.eval(a[0])) % 1; return Num(Math.floor(f * 24 + 1e-9)); });
+  F('MINUTE', (a, ev) => { const f = asNum(ev.eval(a[0])) % 1; return Num(Math.floor((f * 24 % 1) * 60 + 1e-9)); });
+  F('SECOND', (a, ev) => { const f = asNum(ev.eval(a[0])) % 1; return Num(Math.round((f * 24 * 60 % 1) * 60)); });
+  F('WEEKDAY', (a, ev) => { const wd = fromSerial(asNum(ev.eval(a[0]))).getUTCDay(); const type = a.length > 1 ? asNum(ev.eval(a[1])) : 1; if (type === 2) return Num(wd === 0 ? 7 : wd); if (type === 3) return Num(wd === 0 ? 6 : wd - 1); return Num(wd + 1); });
+  F('EDATE', (a, ev) => { const d = fromSerial(asNum(ev.eval(a[0]))); const m = asNum(ev.eval(a[1])); return Num(Math.floor(toSerial(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + m, d.getUTCDate())))); });
+  F('EOMONTH', (a, ev) => { const d = fromSerial(asNum(ev.eval(a[0]))); const m = asNum(ev.eval(a[1])); return Num(Math.floor(toSerial(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + m + 1, 0)))); });
+  F('DAYS', (a, ev) => Num(Math.floor(asNum(ev.eval(a[0])) - asNum(ev.eval(a[1])))));
+  F('DATEVALUE', (a, ev) => { const t = Date.parse(asStr(ev.eval(a[0]))); return isNaN(t) ? VALUE : Num(Math.floor(toSerial(t))); });
+  F('DATEDIF', (a, ev) => { const s = fromSerial(asNum(ev.eval(a[0]))), e = fromSerial(asNum(ev.eval(a[1]))); const u = asStr(ev.eval(a[2])).toUpperCase(); if (u === 'D') return Num(Math.round((e - s) / 86400000)); if (u === 'Y') { let y = e.getUTCFullYear() - s.getUTCFullYear(); if (e.getUTCMonth() < s.getUTCMonth() || (e.getUTCMonth() === s.getUTCMonth() && e.getUTCDate() < s.getUTCDate())) y--; return Num(y); } if (u === 'M') { let m = (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth()); if (e.getUTCDate() < s.getUTCDate()) m--; return Num(m); } return VALUE; });
+  // ---- extra financial ----
+  F('NPER', (a, ev) => { const r = asNum(ev.eval(a[0])), pmt = asNum(ev.eval(a[1])), pv = asNum(ev.eval(a[2])), fv = a.length > 3 ? asNum(ev.eval(a[3])) : 0; if (r === 0) return pmt === 0 ? NUM : Num(-(pv + fv) / pmt); const v = (pmt - fv * r) / (pmt + pv * r); return v <= 0 ? NUM : Num(Math.log(v) / Math.log(1 + r)); });
+  F('RATE', (a, ev) => { const n = asNum(ev.eval(a[0])), pmt = asNum(ev.eval(a[1])), pv = asNum(ev.eval(a[2])), fv = a.length > 3 ? asNum(ev.eval(a[3])) : 0; let r = 0.1; for (let i = 0; i < 80; i++) { const f = Math.pow(1 + r, n); const val = pv * f + pmt * (f - 1) / r + fv; const d = n * pv * Math.pow(1 + r, n - 1) + pmt * ((n * Math.pow(1 + r, n - 1) * r - (f - 1)) / (r * r)); const nr = r - val / d; if (!isFinite(nr)) break; if (Math.abs(nr - r) < 1e-8) return Num(nr); r = nr; } return Num(r); });
+  F('IRR', (a, ev) => { const cf = ev.flatten(a[0]).map(asNum); let r = a.length > 1 ? asNum(ev.eval(a[1])) : 0.1; for (let it = 0; it < 80; it++) { let npv = 0, d = 0; for (let t = 0; t < cf.length; t++) { npv += cf[t] / Math.pow(1 + r, t); d += -t * cf[t] / Math.pow(1 + r, t + 1); } const nr = r - npv / d; if (!isFinite(nr)) break; if (Math.abs(nr - r) < 1e-8) return Num(nr); r = nr; } return Num(r); });
+  F('SLN', (a, ev) => { const c = asNum(ev.eval(a[0])), s = asNum(ev.eval(a[1])), l = asNum(ev.eval(a[2])); return l === 0 ? DIV0 : Num((c - s) / l); });
+  F('SYD', (a, ev) => { const c = asNum(ev.eval(a[0])), s = asNum(ev.eval(a[1])), l = asNum(ev.eval(a[2])), p = asNum(ev.eval(a[3])); return Num((c - s) * (l - p + 1) * 2 / (l * (l + 1))); });
+  // ---- extra info ----
+  F('ISEVEN', (a, ev) => Bool(Math.trunc(asNum(ev.eval(a[0]))) % 2 === 0));
+  F('ISODD', (a, ev) => Bool(Math.abs(Math.trunc(asNum(ev.eval(a[0]))) % 2) === 1));
+  F('ISNONTEXT', (a, ev) => Bool(ev.eval(a[0]).t !== 'str'));
+  F('TYPE', (a, ev) => { const v = ev.eval(a[0]); return Num(v.t === 'num' ? 1 : v.t === 'str' ? 2 : v.t === 'bool' ? 4 : isErr(v) ? 16 : 1); });
 
   function eq(a, b) { if (a.t === 'num' && b.t === 'num') return a.n === b.n; return asStr(a).toLowerCase() === asStr(b).toLowerCase(); }
   function stdev(n, sample) { if (n.length < (sample ? 2 : 1)) return DIV0; const m = n.reduce((x, y) => x + y, 0) / n.length; const ss = n.reduce((x, y) => x + (y - m) * (y - m), 0); return Num(Math.sqrt(ss / (sample ? n.length - 1 : n.length))); }

@@ -331,7 +331,7 @@
       try { await buildTextLayer(page, vp, wrap); } catch (e) {}
       // Editing draws straight onto this same page canvas (one canvas only) — stacking a 2nd
       // canvas made some Android WebViews fail to composite the page beneath it (blank white).
-      pageMeta.push({ pageNum: n, cssW, cssH, pdfW: base.width, pdfH: base.height, annot: [], pageCanvas: cv, wrap, scale, os });
+      pageMeta.push({ pageNum: n, cssW, cssH, pdfW: base.width, pdfH: base.height, annot: [], pageCanvas: cv, wrap, scale, os, pxRatio: os, renderedZoom: 1 });
       bindDraw(cv, pageMeta.length - 1);
     }
     inner.style.zoom = ''; pcssScale = 1;
@@ -352,6 +352,7 @@
     inner.style.zoom = ns;
     pdfview.scrollLeft = px * ns - (cx - r.left);
     pdfview.scrollTop = py * ns - (cy - r.top);
+    scheduleSharpen();
   }
   async function buildTextLayer(page, vp, wrap) {
     const tc = await page.getTextContent();
@@ -452,12 +453,12 @@
   function natXY(cv, meta, clientX, clientY) { const r = cv.getBoundingClientRect(); return { x: (clientX - r.left) * (meta.cssW / r.width), y: (clientY - r.top) * (meta.cssH / r.height) }; }
   // Draw directly on the page canvas (natural coords scaled up by meta.os to the hi-res bitmap).
   function strokeSeg(meta, a, p0, p1) {
-    const g = meta.pageCanvas.getContext('2d'); g.save(); g.setTransform(meta.os, 0, 0, meta.os, 0, 0);
+    const k = meta.pxRatio || meta.os; const g = meta.pageCanvas.getContext('2d'); g.save(); g.setTransform(k, 0, 0, k, 0, 0);
     g.globalAlpha = a.type === 'hl' ? 0.3 : 1; g.strokeStyle = a.color; g.lineWidth = a.w; g.lineCap = 'round'; g.lineJoin = 'round';
     g.beginPath(); g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y); g.stroke(); g.restore();
   }
   function drawTextAnnot(meta, a) {
-    const g = meta.pageCanvas.getContext('2d'); g.save(); g.setTransform(meta.os, 0, 0, meta.os, 0, 0);
+    const k = meta.pxRatio || meta.os; const g = meta.pageCanvas.getContext('2d'); g.save(); g.setTransform(k, 0, 0, k, 0, 0);
     g.globalAlpha = 1; g.fillStyle = a.color; g.font = a.size + 'px sans-serif'; g.textBaseline = 'top';
     (a.str || '').split('\n').forEach((ln, i) => g.fillText(ln, a.x, a.y + i * a.size * 1.2)); g.restore();
   }
@@ -467,18 +468,38 @@
       else { if (a.pts.length === 1) strokeSeg(meta, a, a.pts[0], a.pts[0]); for (let i = 1; i < a.pts.length; i++) strokeSeg(meta, a, a.pts[i - 1], a.pts[i]); }
     }
   }
-  // re-render the clean PDF page then repaint remaining annotations (for undo / clear)
-  async function redrawPage(meta) {
+  // Re-render a page's bitmap at the given zoom so text stays sharp (never below base res),
+  // then repaint its annotations. Keeps ONE canvas, CSS size fixed at natural cssW (inner `zoom` scales it).
+  const MAX_CW = 2600;
+  async function renderPageAt(meta, z) {
     if (!pdfDoc) return;
     try {
       const page = await pdfDoc.getPage(meta.pageNum);
-      const vpHi = page.getViewport({ scale: meta.scale * meta.os });
-      const g = meta.pageCanvas.getContext('2d');
-      g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, meta.pageCanvas.width, meta.pageCanvas.height);
-      await page.render({ canvasContext: g, viewport: vpHi }).promise;
-      paintAnnots(meta);
+      let eff = meta.scale * meta.os * Math.max(1, z);
+      let vp2 = page.getViewport({ scale: eff });
+      if (vp2.width > MAX_CW) { eff = eff * MAX_CW / vp2.width; vp2 = page.getViewport({ scale: eff }); }
+      const cv = meta.pageCanvas, g = cv.getContext('2d');
+      cv.width = Math.floor(vp2.width); cv.height = Math.floor(vp2.height);
+      cv.style.width = meta.cssW + 'px'; cv.style.height = meta.cssH + 'px';
+      g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
+      await page.render({ canvasContext: g, viewport: vp2 }).promise;
+      meta.pxRatio = cv.width / meta.cssW; meta.renderedZoom = Math.max(1, z);
+      if (meta.annot.length) paintAnnots(meta);
     } catch (e) {}
   }
+  function redrawPage(meta) { return renderPageAt(meta, pcssScale); }
+  // sharpen the pages currently on screen to match the live zoom (debounced)
+  let sharpenTimer = null;
+  function scheduleSharpen() { clearTimeout(sharpenTimer); sharpenTimer = setTimeout(sharpenPdf, 230); }
+  async function sharpenPdf() {
+    if (!pageMeta.length) return;
+    const r = pdfview.getBoundingClientRect(); const z = Math.max(1, pcssScale);
+    for (const m of pageMeta) {
+      const pr = m.pageCanvas.getBoundingClientRect();
+      if (pr.bottom > r.top - 60 && pr.top < r.bottom + 60 && m.renderedZoom !== z) await renderPageAt(m, pcssScale);
+    }
+  }
+  pdfview.addEventListener('scroll', () => { if (pcssScale > 1) scheduleSharpen(); }, { passive: true });
   function bindDraw(cv, idx) {
     cv.addEventListener('touchstart', (e) => {
       if (!editMode || e.touches.length > 1) return;
