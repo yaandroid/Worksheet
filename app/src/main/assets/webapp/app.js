@@ -338,15 +338,11 @@
         }
       } catch (re) { pdfDiag += ' RENDERR:' + (re && re.message ? re.message : re); }
       try { await buildTextLayer(page, vp, wrap); } catch (e) {}
-      // annotation overlay for editing
-      const an = document.createElement('canvas'); an.className = 'annot';
+      // NOTE: the annotation overlay canvas is created lazily (only in Edit mode).
+      // Stacking a 2nd canvas over the page canvas makes some Android WebViews fail to
+      // composite the page beneath it (page shows blank white), so view mode keeps one canvas.
       const adpr = Math.min(window.devicePixelRatio || 1, 2);
-      an.width = Math.floor(cssW * adpr); an.height = Math.floor(cssH * adpr);
-      an.style.width = cssW + 'px'; an.style.height = cssH + 'px';
-      an.getContext('2d').setTransform(adpr, 0, 0, adpr, 0, 0);
-      wrap.appendChild(an);
-      pageMeta.push({ pageNum: n, cssW, cssH, pdfW: base.width, pdfH: base.height, annot: [], canvas: an, dpr: adpr });
-      bindAnnot(an, pageMeta.length - 1);
+      pageMeta.push({ pageNum: n, cssW, cssH, pdfW: base.width, pdfH: base.height, annot: [], canvas: null, pageCanvas: cv, wrap, dpr: adpr });
     }
     inner.style.zoom = ''; pcssScale = 1;
     if (pdfSearchEl && pdfSearchEl.value.trim()) runPdfSearch(pdfSearchEl.value.trim());
@@ -464,7 +460,22 @@
   const pdftools = document.getElementById('pdftools');
   let lastPage = 0, drawing = false, curStroke = null, curMeta = null;
   function natXY(an, meta, clientX, clientY) { const r = an.getBoundingClientRect(); return { x: (clientX - r.left) * (meta.cssW / r.width), y: (clientY - r.top) * (meta.cssH / r.height) }; }
+  // create the annotation overlay canvas for a page on demand (edit mode only)
+  function ensureAnnot(idx) {
+    const meta = pageMeta[idx]; if (!meta || meta.canvas) return meta && meta.canvas;
+    const an = document.createElement('canvas'); an.className = 'annot edit';
+    an.width = Math.floor(meta.cssW * meta.dpr); an.height = Math.floor(meta.cssH * meta.dpr);
+    an.style.width = meta.cssW + 'px'; an.style.height = meta.cssH + 'px';
+    an.getContext('2d').setTransform(meta.dpr, 0, 0, meta.dpr, 0, 0);
+    meta.wrap.appendChild(an); meta.canvas = an; bindAnnot(an, idx);
+    if (meta.annot.length) redrawAnnot(meta);
+    return an;
+  }
+  function removeAnnotIfEmpty(meta) {
+    if (meta.canvas && !meta.annot.length) { try { meta.wrap.removeChild(meta.canvas); } catch (e) {} meta.canvas = null; }
+  }
   function redrawAnnot(meta) {
+    if (!meta.canvas) return;
     const g = meta.canvas.getContext('2d'); g.clearRect(0, 0, meta.cssW, meta.cssH);
     for (const a of meta.annot) {
       if (a.type === 'text') { g.globalAlpha = 1; g.fillStyle = a.color; g.font = a.size + 'px sans-serif'; g.textBaseline = 'top';
@@ -499,7 +510,8 @@
   function toggleEdit(on) {
     editMode = on; pdftools.classList.toggle('show', on);
     document.getElementById('pdfEdit').classList.toggle('on', on);
-    pageMeta.forEach(m => m.canvas.classList.toggle('edit', on));
+    if (on) { pageMeta.forEach((m, i) => { ensureAnnot(i); if (m.canvas) m.canvas.classList.add('edit'); }); }
+    else { pageMeta.forEach(m => { if (m.canvas) m.canvas.classList.remove('edit'); removeAnnotIfEmpty(m); }); }
     setStatus(on ? 'Edit mode · draw with finger, T to add text, then Save PDF' : 'PDF · pinch zoom · search above');
   }
   document.getElementById('pdfEdit').onclick = () => toggleEdit(!editMode);
@@ -552,7 +564,7 @@
   let ocrB64 = null, ocrLang = 'hi';
   function centeredPageIdx() {
     const r = pdfview.getBoundingClientRect(); const cy = r.top + r.height / 2; let best = 0, bd = 1e12;
-    pageMeta.forEach((m, i) => { const pr = m.canvas.getBoundingClientRect(); const mid = (pr.top + pr.bottom) / 2; const d = Math.abs(mid - cy); if (d < bd) { bd = d; best = i; } });
+    pageMeta.forEach((m, i) => { const pr = m.pageCanvas.getBoundingClientRect(); const mid = (pr.top + pr.bottom) / 2; const d = Math.abs(mid - cy); if (d < bd) { bd = d; best = i; } });
     return best;
   }
   function runOcr(lang) {
@@ -566,7 +578,7 @@
   document.getElementById('pdfOcr').onclick = () => {
     if (!pdfDoc || !pageMeta.length) { setStatus('Open a PDF first'); return; }
     const m = pageMeta[centeredPageIdx()];
-    const cv = m.canvas.parentElement.querySelector('canvas:not(.annot)');
+    const cv = m && m.pageCanvas;
     if (!cv) { setStatus('Nothing to read'); return; }
     try { ocrB64 = cv.toDataURL('image/png').split(',')[1]; }
     catch (e) { setStatus('OCR failed to capture page'); return; }
