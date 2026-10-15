@@ -53,7 +53,7 @@
   function hideAll() {
     canvas.style.display = 'none'; pdfview.style.display = 'none';
     textview.style.display = 'none'; htmlview.style.display = 'none';
-    fbar.style.display = 'none'; zoombar.classList.remove('show'); aclist.classList.remove('show');
+    fbar.style.display = 'none'; zoombar.classList.remove('show'); zoombar.classList.remove('pdfmode'); aclist.classList.remove('show');
     const fb = document.getElementById('fmtbar'); if (fb) fb.classList.remove('show');
     const pt = document.getElementById('pdftools'); if (pt) pt.classList.remove('show');
     const tt = document.getElementById('texttools'); if (tt) tt.classList.remove('show');
@@ -63,7 +63,8 @@
     document.getElementById('lightbox').classList.remove('show');
     hideLoupe();
   }
-  function showSheet() { hideAll(); canvas.style.display = 'block'; fbar.style.display = 'flex'; resize(); draw(); }
+  let currentView = 'sheet', textFontSize = 15, htmlZoom = 1;
+  function showSheet() { hideAll(); currentView = 'sheet'; canvas.style.display = 'block'; fbar.style.display = 'flex'; resize(); draw(); }
   function showLoading(on) { loading.classList.toggle('show', on); }
   function setStatus(s) { document.getElementById('status').textContent = s + ' · Developed by Sandeep Kushwah'; }
 
@@ -138,13 +139,28 @@
   let gStartX = 0, gStartY = 0, gSX = 0, gSY = 0, gMoved = false, gScroll = false, gLong = null, gMag = false;
   let gLastTap = 0, gLastX = 0, gLastY = 0;
   let gPinch = false, gd0 = 0, gz0 = 1;
+  let gVX = 0, gVY = 0, gLastT = 0, gLastMX = 0, gLastMY = 0, gMomentum = null;
   const gDist = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
+  function stopMomentum() { if (gMomentum) { cancelAnimationFrame(gMomentum); gMomentum = null; } }
+  function startMomentum() {
+    let vx = gVX * 16, vy = gVY * 16;
+    if (Math.abs(vx) < 0.6 && Math.abs(vy) < 0.6) return;
+    const step = () => {
+      vx *= 0.93; vy *= 0.93;
+      if (Math.abs(vx) < 0.3 && Math.abs(vy) < 0.3) { gMomentum = null; return; }
+      scrollX = clamp(scrollX + vx, 0, maxSX()); scrollY = clamp(scrollY + vy, 0, maxSY()); draw();
+      gMomentum = requestAnimationFrame(step);
+    };
+    gMomentum = requestAnimationFrame(step);
+  }
 
   canvas.addEventListener('touchstart', (e) => {
+    stopMomentum();
     if (e.touches.length === 2) { gPinch = true; clearTimeout(gLong); gMag = false; hideLoupe(); gd0 = gDist(e.touches) || 1; gz0 = gridZoom; return; }
     const t = e.touches[0];
     gStartX = t.clientX; gStartY = t.clientY; gSX = scrollX; gSY = scrollY;
     gMoved = false; gScroll = false; gMag = false;
+    gVX = 0; gVY = 0; gLastT = performance.now(); gLastMX = t.clientX; gLastMY = t.clientY;
     gLong = setTimeout(() => { gMag = true; showLoupeAt(canvas, t.clientX, t.clientY); }, 380);
   }, { passive: true });
 
@@ -155,7 +171,11 @@
     const t = e.touches[0];
     const dx = gStartX - t.clientX, dy = gStartY - t.clientY;
     if (gMag) { showLoupeAt(canvas, t.clientX, t.clientY); if (e.cancelable) e.preventDefault(); return; }
-    if (Math.abs(dx) + Math.abs(dy) > 8) { gMoved = true; gScroll = true; clearTimeout(gLong);
+    if (gScroll || Math.abs(dx) + Math.abs(dy) > 6) { gMoved = true; gScroll = true; clearTimeout(gLong);
+      const now = performance.now(), ddt = now - gLastT;
+      if (ddt > 0) { gVX = (gLastMX - t.clientX) / ddt; gVY = (gLastMY - t.clientY) / ddt; }
+      gLastT = now; gLastMX = t.clientX; gLastMY = t.clientY;
+      if (e.cancelable) e.preventDefault();
       scrollX = clamp(gSX + dx, 0, maxSX()); scrollY = clamp(gSY + dy, 0, maxSY()); draw(); }
   }, { passive: false });
 
@@ -163,7 +183,7 @@
     clearTimeout(gLong);
     if (gPinch) { if (e.touches.length < 2) gPinch = false; return; }
     if (gMag) { gMag = false; hideLoupe(); return; }
-    if (gScroll || gMoved) return;
+    if (gScroll || gMoved) { startMomentum(); return; }
     const r = canvas.getBoundingClientRect();
     const x = gStartX - r.left, y = gStartY - r.top;
     const now = Date.now();
@@ -298,7 +318,7 @@
   let pdfDoc = null, pdfRenderScale = 1, pdfBaseW = 0, pdfBaseH = 0;
   let pdfBytes = null, pdfName = 'document.pdf', pageMeta = [], editMode = false, editTool = 'pen';
   async function openPdf(bytes, name) {
-    hideAll(); pdfview.style.display = 'block'; zoombar.classList.add('show'); showLoading(true);
+    hideAll(); currentView = 'pdf'; pdfview.style.display = 'block'; zoombar.classList.add('show'); zoombar.classList.add('pdfmode'); showLoading(true);
     pdfBytes = bytes.slice(0); pdfName = name || 'document.pdf';
     if (editMode) toggleEdit(false);
     try {
@@ -402,8 +422,13 @@
   pdfSearchEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (pdfHits.length) gotoHit(pdfHitIdx + 1); else runPdfSearch(pdfSearchEl.value.trim()); } });
   document.getElementById('pdfNext').onclick = () => gotoHit(pdfHitIdx + 1);
   document.getElementById('pdfPrev').onclick = () => gotoHit(pdfHitIdx - 1);
-  document.getElementById('zoomIn').onclick = () => { if (pdfDoc) setPdfZoom(pcssScale + 0.35, null, null, true); };
-  document.getElementById('zoomOut').onclick = () => { if (pdfDoc) setPdfZoom(pcssScale - 0.35, null, null, true); };
+  function doZoom(dir) {
+    if (currentView === 'pdf') { if (pdfDoc) setPdfZoom(pcssScale + dir * 0.35, null, null, true); }
+    else if (currentView === 'text') { textFontSize = clamp(textFontSize + dir * 2, 9, 44); textview.style.fontSize = textFontSize + 'px'; }
+    else if (currentView === 'html') { htmlZoom = clamp(htmlZoom + dir * 0.15, 0.5, 3); htmlview.style.zoom = htmlZoom; }
+  }
+  document.getElementById('zoomIn').onclick = () => doZoom(1);
+  document.getElementById('zoomOut').onclick = () => doZoom(-1);
 
   // PDF gestures: double-tap zoom + long-press magnify
   function pdfCanvasAt(x, y) { let el = document.elementFromPoint(x, y); if (!el) return null; if (el.tagName === 'CANVAS') return el; const wrap = el.closest && el.closest('.pdfpage'); return wrap ? wrap.querySelector('canvas') : null; }
@@ -618,9 +643,10 @@
   // ---------- text / html ----------
   const texttools = document.getElementById('texttools');
   let textName = 'document.txt', textEditable = false, textSnapshot = '';
-  function showText(s) { hideAll(); textview.style.display = 'block'; textview.value = s; textview.readOnly = true; textEditable = false; }
+  function textZoomOn() { currentView = 'text'; textFontSize = 15; textview.style.fontSize = textFontSize + 'px'; zoombar.classList.add('show'); }
+  function showText(s) { hideAll(); textZoomOn(); textview.style.display = 'block'; textview.value = s; textview.readOnly = true; textEditable = false; }
   function showEditableText(s, name) {
-    hideAll(); textview.style.display = 'block'; textview.value = s; textview.readOnly = false; textEditable = true;
+    hideAll(); textZoomOn(); textview.style.display = 'block'; textview.value = s; textview.readOnly = false; textEditable = true;
     textName = name || 'document.txt'; textSnapshot = s;
     document.getElementById('textname').textContent = textName + '  ·  editable';
     texttools.classList.add('show');
@@ -639,7 +665,7 @@
     else { const a = document.createElement('a'); a.href = 'data:' + mime + ';base64,' + b64; a.download = textName; a.click(); }
     setStatus('Saved ' + textName);
   };
-  function showHtml(s) { hideAll(); htmlview.style.display = 'block'; htmlview.srcdoc = s; setStatus('HTML'); }
+  function showHtml(s) { hideAll(); currentView = 'html'; htmlZoom = 1; htmlview.style.zoom = 1; htmlview.style.display = 'block'; htmlview.srcdoc = s; zoombar.classList.add('show'); setStatus('HTML'); }
   function showMarkdown(s) { showHtml('<pre style="white-space:pre-wrap;font-family:sans-serif;padding:14px;font-size:15px;line-height:1.6">' + s.replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[m])) + '</pre>'); }
 
   const DOC_CSS = '<style>' +
@@ -766,7 +792,38 @@
 
   // ---------- buttons ----------
   document.getElementById('btnOpen').onclick = () => { if (AB && AB.pickFile) AB.pickFile(); };
-  document.getElementById('btnNew').onclick = () => { clearImages(); book = [new E.Sheet('Sheet1')]; active = 0; undoStack.length = 0; renderTabs(); showSheet(); select(0, 0); setStatus('New sheet'); };
+  // ---------- New: blank + templates ----------
+  function openBook(sheets, status) { clearImages(); book = sheets; active = 0; undoStack.length = 0; renderTabs(); showSheet(); select(0, 0); setStatus(status); }
+  function sheetFromAOA(name, aoa) { const s = new E.Sheet(name); aoa.forEach((row, r) => row.forEach((v, c) => { if (v !== '' && v != null) s.set(r, c, String(v)); })); return s; }
+  const TPL_SHEET = {
+    invoice: () => [["Brahm InnerBrain Technologies Pvt. Ltd."], ["TAX INVOICE"], ["Invoice No:", "", "Date:", ""], ["Bill To:", ""], [""], ["Item", "Qty", "Rate", "Amount"], ["", "", "", "=B7*C7"], ["", "", "", "=B8*C8"], ["", "", "", "=B9*C9"], [""], ["", "", "Subtotal", "=SUM(D7:D9)"], ["", "", "GST 18%", "=D11*0.18"], ["", "", "Total", "=D11+D12"]],
+    budget: () => [["Monthly Budget"], ["Category", "Budget", "Actual", "Difference"], ["Rent", "", "", "=B3-C3"], ["Food", "", "", "=B4-C4"], ["Transport", "", "", "=B5-C5"], ["Utilities", "", "", "=B6-C6"], ["Other", "", "", "=B7-C7"], ["TOTAL", "=SUM(B3:B7)", "=SUM(C3:C7)", "=B8-C8"]],
+    opd: () => [["BRAHM Homeopathy — OPD Register"], ["Date", "Patient Name", "Age", "Sex", "Phone", "Complaint", "Medicine", "Fee"], ["", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "Total Fee", "=SUM(H3:H5)"]]
+  };
+  const TPL_TEXT = {
+    letter: { name: 'letter.txt', body: 'Date: \n\nTo,\n[Name]\n[Address]\n\nSubject: \n\nDear Sir/Madam,\n\n\n\n\nRegards,\nSandeep Kushwah\nBrahm InnerBrain Technologies Pvt. Ltd.' },
+    meeting: { name: 'meeting-notes.md', body: '# Meeting Notes\n\nDate: \nAttendees: \n\n## Agenda\n- \n\n## Discussion\n- \n\n## Action items\n- [ ] \n\nNext meeting: ' }
+  };
+  const newmodal = document.getElementById('newmodal');
+  function buildNewMenu() {
+    const m = document.getElementById('newmenu'); m.innerHTML = '';
+    const card = (ic, nm, fn) => { const d = document.createElement('div'); d.className = 'newcard'; d.innerHTML = '<div class="ic">' + ic + '</div><div class="nm">' + nm + '</div>'; d.onclick = () => { newmodal.classList.remove('show'); fn(); }; return d; };
+    const sec = (t) => { const d = document.createElement('div'); d.className = 'newsection'; d.textContent = t; return d; };
+    m.appendChild(sec('Blank'));
+    m.appendChild(card('📊', 'Sheet', () => openBook([new E.Sheet('Sheet1')], 'New sheet')));
+    m.appendChild(card('📝', 'Document', () => showEditableText('', 'document.md')));
+    m.appendChild(card('🗒️', 'Note', () => showEditableText('', 'note.txt')));
+    m.appendChild(sec('Sheet templates'));
+    m.appendChild(card('🧾', 'Invoice', () => openBook([sheetFromAOA('Invoice', TPL_SHEET.invoice())], 'Invoice template')));
+    m.appendChild(card('💰', 'Budget', () => openBook([sheetFromAOA('Budget', TPL_SHEET.budget())], 'Budget template')));
+    m.appendChild(card('🏥', 'OPD Register', () => openBook([sheetFromAOA('OPD', TPL_SHEET.opd())], 'OPD Register template')));
+    m.appendChild(sec('Document templates'));
+    m.appendChild(card('✉️', 'Letter', () => showEditableText(TPL_TEXT.letter.body, TPL_TEXT.letter.name)));
+    m.appendChild(card('📋', 'Meeting Notes', () => showEditableText(TPL_TEXT.meeting.body, TPL_TEXT.meeting.name)));
+  }
+  document.getElementById('btnNew').onclick = () => { buildNewMenu(); newmodal.classList.add('show'); };
+  document.getElementById('newClose').onclick = () => newmodal.classList.remove('show');
+  newmodal.addEventListener('click', (e) => { if (e.target === newmodal) newmodal.classList.remove('show'); });
   document.getElementById('btnSaveXlsx').onclick = () => saveAs('xlsx');
   document.getElementById('btnSaveCsv').onclick = () => saveAs('csv');
 
@@ -938,6 +995,36 @@
     document.querySelectorAll('.ctype').forEach(x => x.classList.remove('on')); b.classList.add('on');
     chartType = b.getAttribute('data-ct'); drawChart();
   });
+
+  // ---------- find & replace (across active sheet) ----------
+  const frmodal = document.getElementById('frmodal');
+  let frPos = { r: -1, c: -1 };
+  function frCells() { const s = sheet(); let mr = 0, mc = 0; for (const k of s.cells.keys()) { const r = Math.floor(k / E.MAX_COLS), c = k % E.MAX_COLS; if (r > mr) mr = r; if (c > mc) mc = c; } return { s, mr, mc }; }
+  function frFindNext() {
+    const q = document.getElementById('frFind').value; if (!q) return;
+    const { s, mr, mc } = frCells(); const ql = q.toLowerCase();
+    let sr = frPos.r, sc = frPos.c + 1;
+    for (let r = Math.max(0, sr); r <= mr; r++) { for (let c = (r === sr ? sc : 0); c <= mc; c++) { if ((s.raw(r, c) || '').toLowerCase().includes(ql)) { frPos = { r, c }; select(r, c); document.getElementById('frStat').textContent = 'Found at ' + E.colName(c) + (r + 1); return true; } } }
+    frPos = { r: -1, c: -1 }; document.getElementById('frStat').textContent = 'No more matches'; return false;
+  }
+  function frReplaceOne() {
+    const q = document.getElementById('frFind').value, rep = document.getElementById('frRepl').value; if (!q) return;
+    const s = sheet(); const cur = s.raw(selR, selC);
+    if (cur && cur.toLowerCase().includes(q.toLowerCase())) { snapshot(); s.set(selR, selC, cur.split(q).join(rep)); frPos = { r: selR, c: selC }; }
+    frFindNext();
+  }
+  function frReplaceAll() {
+    const q = document.getElementById('frFind').value, rep = document.getElementById('frRepl').value; if (!q) return;
+    const { s, mr, mc } = frCells(); let n = 0; snapshot();
+    for (let r = 0; r <= mr; r++) for (let c = 0; c <= mc; c++) { const v = s.raw(r, c); if (v && v.toLowerCase().includes(q.toLowerCase())) { s.set(r, c, v.split(q).join(rep)); n++; } }
+    draw(); document.getElementById('frStat').textContent = n + ' replaced';
+  }
+  document.getElementById('fFR').onclick = () => { frPos = { r: -1, c: -1 }; document.getElementById('frStat').textContent = ''; frmodal.classList.add('show'); };
+  document.getElementById('frClose').onclick = () => frmodal.classList.remove('show');
+  frmodal.addEventListener('click', (e) => { if (e.target === frmodal) frmodal.classList.remove('show'); });
+  document.getElementById('frNext').onclick = frFindNext;
+  document.getElementById('frOne').onclick = frReplaceOne;
+  document.getElementById('frAll').onclick = frReplaceAll;
 
   function sortColumn(asc) {
     const s = sheet();

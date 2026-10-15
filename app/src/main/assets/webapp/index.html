@@ -54,6 +54,14 @@
   #chartcv{flex:1;width:100%;background:#fff;touch-action:none}
   #ocrtext{margin:0;padding:14px;overflow:auto;white-space:pre-wrap;color:#eaeef5;font-size:14px;line-height:1.55;max-height:70vh;-webkit-user-select:text;user-select:text}
   .olang.on{background:var(--saffron);color:#2a1d00}
+  .zoombar:not(.pdfmode) .pdfonly{display:none}
+  #grid{touch-action:none}
+  .newmenu{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px;overflow:auto;max-height:76vh}
+  .newcard{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 10px;background:#0e1830;border:1px solid var(--line);border-radius:12px;color:var(--txt);cursor:pointer}
+  .newcard:active{background:#24324f}
+  .newcard .ic{font-size:26px}
+  .newcard .nm{font-size:13px;font-weight:600;text-align:center}
+  .newsection{grid-column:1/-1;color:var(--muted);font-size:12px;font-weight:600;margin-top:6px;padding-left:2px}
 </style>
 </head>
 <body>
@@ -67,14 +75,14 @@
     <button class="btn" id="btnSaveCsv">.csv</button>
     <button class="btn" id="btnImages" style="display:none">Images</button>
     <div class="zoombar" id="zoombar">
-      <input id="pdfSearch" class="pdfsearch" placeholder="Find in PDF" spellcheck="false" autocomplete="off">
-      <button class="btn" id="pdfPrev" title="Previous">‹</button>
-      <span id="pdfHits" class="pdfhits"></span>
-      <button class="btn" id="pdfNext" title="Next">›</button>
+      <input id="pdfSearch" class="pdfsearch pdfonly" placeholder="Find in PDF" spellcheck="false" autocomplete="off">
+      <button class="btn pdfonly" id="pdfPrev" title="Previous">‹</button>
+      <span id="pdfHits" class="pdfhits pdfonly"></span>
+      <button class="btn pdfonly" id="pdfNext" title="Next">›</button>
       <button class="btn" id="zoomOut">−</button>
       <button class="btn" id="zoomIn">+</button>
-      <button class="btn" id="pdfEdit" title="Edit PDF">✏️ Edit</button>
-      <button class="btn" id="pdfOcr" title="Read text (OCR)">🔎 OCR</button>
+      <button class="btn pdfonly" id="pdfEdit" title="Edit PDF">✏️ Edit</button>
+      <button class="btn pdfonly" id="pdfOcr" title="Read text (OCR)">🔎 OCR</button>
     </div>
   </div>
 
@@ -126,6 +134,7 @@
     <button class="fbtn" id="fColDel" title="Delete this column">−Col</button>
     <span class="fsep"></span>
     <button class="fbtn" id="fChart" title="Chart from data">📊 Chart</button>
+    <button class="fbtn" id="fFR" title="Find &amp; Replace">🔎 F&amp;R</button>
   </div>
 
   <div class="texttools" id="texttools">
@@ -163,6 +172,29 @@
         </div>
       </div>
       <canvas id="chartcv"></canvas>
+    </div>
+  </div>
+
+  <div class="chartmodal" id="newmodal">
+    <div class="chartbox">
+      <div class="charthead"><span>New · Blank &amp; Templates</span><div class="chartbtns"><button class="fbtn" id="newClose">✕</button></div></div>
+      <div class="newmenu" id="newmenu"></div>
+    </div>
+  </div>
+
+  <div class="chartmodal" id="frmodal">
+    <div class="chartbox">
+      <div class="charthead"><span>Find &amp; Replace</span><div class="chartbtns"><button class="fbtn" id="frClose">✕</button></div></div>
+      <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+        <input id="frFind" class="pdfsearch" style="width:auto" placeholder="Find">
+        <input id="frRepl" class="pdfsearch" style="width:auto" placeholder="Replace with">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="fbtn" id="frNext">Find next</button>
+          <button class="fbtn" id="frOne">Replace</button>
+          <button class="fbtn accent" id="frAll">Replace all</button>
+        </div>
+        <div id="frStat" style="color:var(--muted);font-size:12px"></div>
+      </div>
     </div>
   </div>
 
