@@ -77,8 +77,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         list.layoutManager = LinearLayoutManager(this)
-        adapter = FileAdapter(emptyList()) { open(it) }
+        adapter = FileAdapter(emptyList(), { open(it) }, { count -> updateSelBar(count) })
         list.adapter = adapter
+
+        findViewById<Button>(R.id.selShare).setOnClickListener { shareSelected() }
+        findViewById<Button>(R.id.selCancel).setOnClickListener { adapter.clearSelection() }
 
         buildTiles()
 
@@ -306,9 +309,35 @@ class MainActivity : AppCompatActivity() {
         adapter.submit(out)
     }
 
+    private fun updateSelBar(count: Int) {
+        val bar = findViewById<View>(R.id.selbar)
+        if (count > 0) { bar.visibility = View.VISIBLE; findViewById<TextView>(R.id.selCount).text = "$count selected" }
+        else bar.visibility = View.GONE
+    }
+
+    private fun shareItemUri(f: FileItem): Uri? = try {
+        if (f.path.startsWith("content://")) Uri.parse(f.path)
+        else androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fileprovider", File(f.path))
+    } catch (e: Exception) { null }
+
+    private fun shareSelected() {
+        val sel = adapter.selectedItems(); if (sel.isEmpty()) return
+        val uris = ArrayList<Uri>(); sel.forEach { shareItemUri(it)?.let { u -> uris.add(u) } }
+        if (uris.isEmpty()) { android.widget.Toast.makeText(this, "Could not share these files", android.widget.Toast.LENGTH_SHORT).show(); return }
+        val intent = if (uris.size == 1) Intent(Intent.ACTION_SEND).apply { putExtra(Intent.EXTRA_STREAM, uris[0]) }
+        else Intent(Intent.ACTION_SEND_MULTIPLE).apply { putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris) }
+        intent.type = "*/*"; intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try { startActivity(Intent.createChooser(intent, "Share ${uris.size} file(s)")); adapter.clearSelection() }
+        catch (e: Exception) { android.widget.Toast.makeText(this, "No app to share with", android.widget.Toast.LENGTH_SHORT).show() }
+    }
+
     private fun open(f: FileItem) {
         if (f.path.startsWith("content://")) { openUri(Uri.parse(f.path)); return }
         Recents.add(this, f.path); routeFile(f.path)
     }
     private fun routeFile(path: String) { startActivity(Intent(this, DocActivity::class.java).putExtra("path", path)) }
+
+    override fun onBackPressed() {
+        if (adapter.selectionMode) adapter.clearSelection() else super.onBackPressed()
+    }
 }

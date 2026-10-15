@@ -14,15 +14,19 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Mixed list: String = section header (folder name), FileItem = file row. */
+/** Mixed list: String = section header (folder name), FileItem = file row. Supports multi-select. */
 class FileAdapter(
     private var items: List<Any>,
-    private val onClick: (FileItem) -> Unit
+    private val onClick: (FileItem) -> Unit,
+    private val onSelectionChange: (Int) -> Unit = {}
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val fmt = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
     private val T_HEADER = 0
     private val T_FILE = 1
+
+    var selectionMode = false; private set
+    private val selected = LinkedHashSet<String>()   // by path
 
     class HeaderVH(v: View) : RecyclerView.ViewHolder(v) { val title: TextView = v.findViewById(R.id.headerTitle) }
     class FileVH(v: View) : RecyclerView.ViewHolder(v) {
@@ -32,6 +36,15 @@ class FileAdapter(
     }
 
     fun submit(list: List<Any>) { items = list; notifyDataSetChanged() }
+
+    fun clearSelection() { if (selected.isEmpty() && !selectionMode) return; selectionMode = false; selected.clear(); notifyDataSetChanged(); onSelectionChange(0) }
+    fun selectedItems(): List<FileItem> = items.filterIsInstance<FileItem>().filter { selected.contains(it.path) }
+
+    private fun toggle(item: FileItem) {
+        if (selected.contains(item.path)) selected.remove(item.path) else selected.add(item.path)
+        if (selected.isEmpty()) selectionMode = false
+        notifyDataSetChanged(); onSelectionChange(selected.size)
+    }
 
     override fun getItemCount() = items.size
     override fun getItemViewType(position: Int) = if (items[position] is String) T_HEADER else T_FILE
@@ -53,7 +66,10 @@ class FileAdapter(
                 DocType.CSV -> "CSV"; DocType.PPT -> "PPT"; DocType.TEXT -> "TXT"; else -> "FILE"
             }
             h.badge.setBackgroundColor(colorFor(item.type))
-            h.itemView.setOnClickListener { onClick(item) }
+            val sel = selected.contains(item.path)
+            h.itemView.setBackgroundColor(if (sel) Color.parseColor("#D7E8FF") else Color.TRANSPARENT)
+            h.itemView.setOnClickListener { if (selectionMode) toggle(item) else onClick(item) }
+            h.itemView.setOnLongClickListener { if (!selectionMode) selectionMode = true; toggle(item); true }
         }
     }
 
