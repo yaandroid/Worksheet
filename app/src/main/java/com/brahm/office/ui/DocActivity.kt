@@ -187,6 +187,18 @@ class DocActivity : AppCompatActivity() {
                 try { savePicker.launch(name) } catch (_: Exception) {}
             }
         }
+        /** Share the current document bytes via the Android share sheet. */
+        @JavascriptInterface fun shareBytes(name: String, mime: String, base64: String) {
+            try {
+                val data = Base64.decode(base64, Base64.DEFAULT)
+                val safe = name.replace("/", "_").replace("\\", "_")
+                val dir = java.io.File(cacheDir, "share"); dir.mkdirs()
+                val f = java.io.File(dir, if (safe.isBlank()) "document" else safe); f.writeBytes(data)
+                val uri = androidx.core.content.FileProvider.getUriForFile(this@DocActivity, "$packageName.fileprovider", f)
+                val i = Intent(Intent.ACTION_SEND).apply { type = mime; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                runOnUiThread { try { startActivity(Intent.createChooser(i, "Share")) } catch (_: Exception) {} }
+            } catch (_: Exception) {}
+        }
         /** On-device OCR of a PNG (base64). lang: "hi" → Devanagari, else Latin. */
         @JavascriptInterface fun ocr(base64Png: String, lang: String) {
             try {

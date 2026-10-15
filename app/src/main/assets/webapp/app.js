@@ -973,11 +973,31 @@
     m.appendChild(card('📋', 'Meeting Notes', () => showEditableText(TPL_TEXT.meeting.body, TPL_TEXT.meeting.name)));
   }
   // ---------- immersive full-screen (hide all chrome; more space on small phones) ----------
-  document.getElementById('fsBtn').onclick = () => {
+  const SVG_EXPAND = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>';
+  const SVG_COLLAPSE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h3a2 2 0 0 0 2-2V4"/><path d="M20 9h-3a2 2 0 0 1-2-2V4"/><path d="M4 15h3a2 2 0 0 1 2 2v3"/><path d="M20 15h-3a2 2 0 0 0-2 2v3"/></svg>';
+  const fsBtn = document.getElementById('fsBtn');
+  fsBtn.innerHTML = SVG_EXPAND;
+  fsBtn.onclick = () => {
     const on = document.body.classList.toggle('immersive');
-    document.getElementById('fsBtn').textContent = on ? '⤡' : '⤢';
+    fsBtn.innerHTML = on ? SVG_COLLAPSE : SVG_EXPAND;
     if (currentView === 'sheet') { resize(); draw(); }
     if (currentView === 'pdf') scheduleSharpen();
+  };
+
+  // ---------- Share the current document ----------
+  function bytesToB64(u) { let s = ''; const CH = 0x8000; for (let i = 0; i < u.length; i += CH) s += String.fromCharCode.apply(null, u.subarray(i, i + CH)); return btoa(s); }
+  document.getElementById('btnShare').onclick = () => {
+    if (!(AB && AB.shareBytes)) { setStatus('Share needs the installed app'); return; }
+    try {
+      if (currentView === 'pdf' && pdfBytes) { AB.shareBytes(pdfName || 'document.pdf', 'application/pdf', bytesToB64(pdfBytes)); setStatus('Sharing ' + (pdfName || 'PDF')); }
+      else if (currentView === 'sheet') {
+        const wb = XLSX.utils.book_new(); book.forEach((s) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetToAOA(s)), (s.name || 'Sheet').slice(0, 31)));
+        const b64 = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
+        AB.shareBytes('BRAHM-Office.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', b64); setStatus('Sharing sheet');
+      }
+      else if (currentView === 'text') { const b64 = btoa(unescape(encodeURIComponent(textview.value))); AB.shareBytes(textName || 'document.txt', 'text/plain', b64); setStatus('Sharing ' + (textName || 'text')); }
+      else setStatus('Open a document to share');
+    } catch (e) { setStatus('Share failed: ' + e.message); }
   };
 
   document.getElementById('btnNew').onclick = () => { buildNewMenu(); newmodal.classList.add('show'); };
