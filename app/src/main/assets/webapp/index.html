@@ -87,6 +87,7 @@
       <button class="btn" id="zoomIn">+</button>
       <button class="btn pdfonly" id="pdfEdit" title="Edit PDF">✏️ Edit</button>
       <button class="btn pdfonly" id="pdfOcr" title="Read text (OCR)">🔎 OCR</button>
+      <button class="btn pdfonly" id="pdfLock" title="Password">🔒</button>
     </div>
   </div>
 
@@ -202,6 +203,16 @@
           <button class="fbtn accent" id="frAll">Replace all</button>
         </div>
         <div id="frStat" style="color:var(--muted);font-size:12px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="chartmodal" id="pwmodal">
+    <div class="chartbox">
+      <div class="charthead"><span>PDF Password</span><div class="chartbtns"><button class="fbtn" id="pwClose">✕</button></div></div>
+      <div class="newmenu" id="pwmenu" style="grid-template-columns:1fr">
+        <div class="newcard" id="pwSet"><div class="ic">🔒</div><div class="nm">Set / change password</div></div>
+        <div class="newcard" id="pwRemove"><div class="ic">🔓</div><div class="nm">Remove password</div></div>
       </div>
     </div>
   </div>

@@ -320,19 +320,71 @@
 
   // ---------- PDF ----------
   let pdfDoc = null, pdfRenderScale = 1, pdfBaseW = 0, pdfBaseH = 0;
-  let pdfBytes = null, pdfName = 'document.pdf', pageMeta = [], editMode = false, editTool = 'pen';
+  let pdfBytes = null, pdfName = 'document.pdf', pageMeta = [], editMode = false, editTool = 'pen', pdfPassword = '';
   async function openPdf(bytes, name) {
     hideAll(); currentView = 'pdf'; pdfview.style.display = 'block'; zoombar.classList.add('show'); zoombar.classList.add('pdfmode'); showLoading(true);
-    pdfBytes = bytes.slice(0); pdfName = name || 'document.pdf';
+    pdfBytes = bytes.slice(0); pdfName = name || 'document.pdf'; pdfPassword = '';
     if (editMode) toggleEdit(false);
-    try {
-      pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
-      await renderPdf();
-      setStatus('PDF · ' + pdfDoc.numPages + ' pages · pinch zoom · ✏️ Edit to annotate');
+    let doc = null, pw = '';
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const data = pdfBytes.slice(0);
+        doc = await pdfjsLib.getDocument(pw ? { data, password: pw } : { data }).promise;
+        break;
+      } catch (e) {
+        if (e && (e.name === 'PasswordException' || e.code === 1 || e.code === 2)) {
+          const entered = prompt((e.code === 2 ? 'Wrong password. ' : '') + 'This PDF is locked. Enter password:');
+          if (entered === null) { showLoading(false); setStatus('Password needed'); showText('🔒 This PDF is password-protected.'); return; }
+          pw = entered; continue;
+        }
+        showLoading(false); setStatus('PDF error'); showText('Could not open this PDF.'); return;
+      }
     }
-    catch (e) { setStatus('PDF error'); showText('Could not open this PDF.'); }
+    if (!doc) { showLoading(false); setStatus('Wrong password'); showText('🔒 Could not unlock this PDF.'); return; }
+    pdfPassword = pw; pdfDoc = doc;
+    await renderPdf();
+    setStatus('PDF · ' + pdfDoc.numPages + ' pages · pinch zoom · ✏️ Edit to annotate');
     showLoading(false);
   }
+  function savePdfOut(nm, b64) {
+    if (AB && AB.saveFile) AB.saveFile(nm, 'application/pdf', b64);
+    else { const bin = atob(b64); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' })); a.download = nm; a.click(); }
+  }
+  // ---- PDF password: set / remove (via @cantoo/pdf-lib) ----
+  const pwmodal = document.getElementById('pwmodal');
+  document.getElementById('pdfLock').onclick = () => { if (pdfBytes) pwmodal.classList.add('show'); else setStatus('Open a PDF first'); };
+  document.getElementById('pwClose').onclick = () => pwmodal.classList.remove('show');
+  pwmodal.addEventListener('click', (e) => { if (e.target === pwmodal) pwmodal.classList.remove('show'); });
+  document.getElementById('pwSet').onclick = async () => {
+    pwmodal.classList.remove('show');
+    if (typeof PDFLib === 'undefined' || !pdfBytes) return;
+    const pw = prompt('Set a password for this PDF:'); if (!pw) return;
+    showLoading(true); setStatus('Encrypting…');
+    try {
+      const { PDFDocument } = PDFLib;
+      const doc = await PDFDocument.load(pdfBytes.slice(0), pdfPassword ? { password: pdfPassword } : {});
+      doc.encrypt({ userPassword: pw, ownerPassword: pw });
+      const out = await doc.saveAsBase64();
+      const nm = pdfName.replace(/\.pdf$/i, '') + '-protected.pdf';
+      savePdfOut(nm, out); setStatus('Saved ' + nm + ' — password set');
+    } catch (e) { setStatus('Encrypt failed: ' + e.message); }
+    showLoading(false);
+  };
+  document.getElementById('pwRemove').onclick = async () => {
+    pwmodal.classList.remove('show');
+    if (typeof PDFLib === 'undefined' || !pdfBytes) return;
+    showLoading(true); setStatus('Removing password…');
+    try {
+      const { PDFDocument } = PDFLib;
+      let doc;
+      try { doc = await PDFDocument.load(pdfBytes.slice(0), pdfPassword ? { password: pdfPassword } : {}); }
+      catch (e1) { const entered = prompt('Enter the current password to remove it:'); if (!entered) { showLoading(false); return; } doc = await PDFDocument.load(pdfBytes.slice(0), { password: entered }); }
+      const out = await doc.saveAsBase64();
+      const nm = pdfName.replace(/\.pdf$/i, '') + '-unlocked.pdf';
+      savePdfOut(nm, out); setStatus('Saved ' + nm + ' — password removed');
+    } catch (e) { setStatus('Could not remove password: ' + e.message); }
+    showLoading(false);
+  };
   async function renderPdf() {
     pdfview.innerHTML = '<div id="pdfinner"></div>';
     pdfHits = []; pdfHitIdx = -1; pcssScale = 1; pageMeta = [];
