@@ -100,6 +100,10 @@
       if (isNum) { ctx.textAlign = 'right'; ctx.fillText(t, left + cellW - 6, top + cellH * .68); }
       else { ctx.textAlign = 'left'; ctx.fillText(t, left + 6, top + cellH * .68); }
       ctx.restore(); ctx.font = curFs + 'px sans-serif'; }
+    // data-validation ▾ marker (bottom-right) and comment triangle (top-right)
+    const s = sheet();
+    if (s.dv && s.dv[cellKey(r, c)]) { ctx.fillStyle = '#2B579A'; ctx.beginPath(); ctx.moveTo(left + cellW - 11, top + cellH - 6); ctx.lineTo(left + cellW - 3, top + cellH - 6); ctx.lineTo(left + cellW - 7, top + cellH - 1); ctx.fill(); }
+    if (s.comments && s.comments[cellKey(r, c)]) { ctx.fillStyle = '#D64541'; ctx.beginPath(); ctx.moveTo(left + cellW - 7, top + 1); ctx.lineTo(left + cellW - 1, top + 1); ctx.lineTo(left + cellW - 1, top + 7); ctx.fill(); }
   }
   function draw() {
     if (canvas.style.display === 'none') return;
@@ -193,7 +197,7 @@
     gLastTap = now; gLastX = x; gLastY = y;
     if (x >= rowHead && y >= colHead) {
       const c = Math.floor((scrollX + x - rowHead) / cellW), row = Math.floor((scrollY + y - colHead) / cellH);
-      if (row >= 0 && row < E.MAX_ROWS && c >= 0 && c < E.MAX_COLS) select(row, c);
+      if (row >= 0 && row < E.MAX_ROWS && c >= 0 && c < E.MAX_COLS) { select(row, c); showDVChooser(row, c); }
     }
   }, { passive: true });
 
@@ -202,7 +206,7 @@
     applyZoom(); scrollX = clamp(scrollX, 0, maxSX()); scrollY = clamp(scrollY, 0, maxSY()); draw();
   }
 
-  function select(r, c) { commit(); selR = r; selC = c; cellref.textContent = E.colName(c) + (r + 1); finput.value = sheet().raw(r, c); aclist.classList.remove('show'); updateFmtUI(); ensureVis(); draw(); }
+  function select(r, c) { commit(); selR = r; selC = c; cellref.textContent = E.colName(c) + (r + 1); finput.value = sheet().raw(r, c); aclist.classList.remove('show'); updateFmtUI(); ensureVis(); draw(); const cm = (sheet().comments || {})[cellKey(r, c)]; if (cm) setStatus('📝 ' + cm); }
   function updateFmtUI() {
     const f = fmtGet(sheet(), selR, selC) || {};
     const fB = document.getElementById('fB'), fI = document.getElementById('fI'), fNF = document.getElementById('fNF');
@@ -821,6 +825,14 @@
     m.appendChild(card('✉️', 'Letter', () => showEditableText(TPL_TEXT.letter.body, TPL_TEXT.letter.name)));
     m.appendChild(card('📋', 'Meeting Notes', () => showEditableText(TPL_TEXT.meeting.body, TPL_TEXT.meeting.name)));
   }
+  // ---------- immersive full-screen (hide all chrome; more space on small phones) ----------
+  document.getElementById('fsBtn').onclick = () => {
+    const on = document.body.classList.toggle('immersive');
+    document.getElementById('fsBtn').textContent = on ? '⤡' : '⤢';
+    if (currentView === 'sheet') { resize(); draw(); }
+    if (currentView === 'pdf') scheduleSharpen();
+  };
+
   document.getElementById('btnNew').onclick = () => { buildNewMenu(); newmodal.classList.add('show'); };
   document.getElementById('newClose').onclick = () => newmodal.classList.remove('show');
   newmodal.addEventListener('click', (e) => { if (e.target === newmodal) newmodal.classList.remove('show'); });
@@ -1025,6 +1037,36 @@
   document.getElementById('frNext').onclick = frFindNext;
   document.getElementById('frOne').onclick = frReplaceOne;
   document.getElementById('frAll').onclick = frReplaceAll;
+
+  // ---------- data validation (dropdown list) + cell comments ----------
+  function dvOf(s) { if (!s.dv) s.dv = {}; return s.dv; }
+  function commentsOf(s) { if (!s.comments) s.comments = {}; return s.comments; }
+  const dvmodal = document.getElementById('dvmodal');
+  document.getElementById('fList').onclick = () => {
+    const cur = (dvOf(sheet())[cellKey(selR, selC)] || []).join(', ');
+    const inp = prompt('Dropdown options for ' + E.colName(selC) + (selR + 1) + ' (comma separated).\nLeave empty to remove.', cur);
+    if (inp === null) return;
+    const opts = inp.split(',').map(x => x.trim()).filter(x => x);
+    if (opts.length) dvOf(sheet())[cellKey(selR, selC)] = opts; else delete dvOf(sheet())[cellKey(selR, selC)];
+    draw(); setStatus(opts.length ? 'Dropdown set' : 'Dropdown removed');
+  };
+  function showDVChooser(r, c) {
+    const opts = (sheet().dv || {})[cellKey(r, c)]; if (!opts) return false;
+    const list = document.getElementById('dvlist'); list.innerHTML = '';
+    document.getElementById('dvhead').textContent = E.colName(c) + (r + 1) + ' — choose';
+    opts.forEach(o => { const d = document.createElement('div'); d.className = 'newcard'; d.innerHTML = '<div class="nm">' + o.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])) + '</div>'; d.onclick = () => { snapshot(); sheet().set(r, c, o); dvmodal.classList.remove('show'); select(r, c); }; list.appendChild(d); });
+    dvmodal.classList.add('show'); return true;
+  }
+  document.getElementById('dvClose').onclick = () => dvmodal.classList.remove('show');
+  dvmodal.addEventListener('click', (e) => { if (e.target === dvmodal) dvmodal.classList.remove('show'); });
+  document.getElementById('fComment').onclick = () => {
+    const cm = commentsOf(sheet()); const k = cellKey(selR, selC);
+    const cur = cm[k] || '';
+    const note = prompt('Note for ' + E.colName(selC) + (selR + 1) + ' (empty to remove):', cur);
+    if (note === null) return;
+    if (note.trim()) cm[k] = note.trim(); else delete cm[k];
+    draw(); setStatus(note.trim() ? 'Note added' : 'Note removed');
+  };
 
   function sortColumn(asc) {
     const s = sheet();

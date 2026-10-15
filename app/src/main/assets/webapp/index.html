@@ -62,6 +62,10 @@
   .newcard .ic{font-size:26px}
   .newcard .nm{font-size:13px;font-weight:600;text-align:center}
   .newsection{grid-column:1/-1;color:var(--muted);font-size:12px;font-weight:600;margin-top:6px;padding-left:2px}
+  /* immersive full-screen toggle */
+  #fsBtn{position:fixed;right:12px;bottom:60px;z-index:55;width:44px;height:44px;border-radius:50%;border:none;background:rgba(14,24,48,.82);color:#fff;font-size:20px;box-shadow:0 2px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
+  body.immersive .topbar, body.immersive .formulabar, body.immersive .fmtbar, body.immersive .statusbar, body.immersive #pdftools, body.immersive .texttools{display:none !important}
+  body.immersive #fsBtn{bottom:16px}
 </style>
 </head>
 <body>
@@ -135,6 +139,8 @@
     <span class="fsep"></span>
     <button class="fbtn" id="fChart" title="Chart from data">📊 Chart</button>
     <button class="fbtn" id="fFR" title="Find &amp; Replace">🔎 F&amp;R</button>
+    <button class="fbtn" id="fList" title="Dropdown list (data validation)">▾ List</button>
+    <button class="fbtn" id="fComment" title="Cell comment">💬 Note</button>
   </div>
 
   <div class="texttools" id="texttools">
@@ -157,6 +163,8 @@
     <div class="sheettabs" id="tabs"></div>
     <div id="status">BRAHM Office · Developed by Sandeep Kushwah</div>
   </div>
+
+  <button id="fsBtn" title="Full screen">⤢</button>
 
   <div class="loupe" id="loupe"><canvas id="loupecv" width="150" height="150"></canvas></div>
 
@@ -195,6 +203,13 @@
         </div>
         <div id="frStat" style="color:var(--muted);font-size:12px"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="chartmodal" id="dvmodal">
+    <div class="chartbox">
+      <div class="charthead"><span id="dvhead">Choose a value</span><div class="chartbtns"><button class="fbtn" id="dvClose">✕</button></div></div>
+      <div class="newmenu" id="dvlist" style="grid-template-columns:1fr"></div>
     </div>
   </div>
 
