@@ -654,6 +654,100 @@
     showLoading(false);
   };
 
+  // ---------- PDF pages: organize / rotate / delete / reorder / merge / images / export ----------
+  const pagesmodal = document.getElementById('pagesmodal');
+  let pgOrder = [], pgRot = {}, pgPendingOp = null;
+  function b64ToBytes(b64) { const bin = atob(b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+  function reopenPdfB64(b64, name) { openPdf(b64ToBytes(b64), name); }
+  function openPagesPanel() {
+    if (!pdfDoc) { setStatus('Open a PDF first'); return; }
+    pgOrder = []; pgRot = {}; for (let i = 0; i < pdfDoc.numPages; i++) pgOrder.push(i);
+    renderPagesList(); pagesmodal.classList.add('show');
+  }
+  function renderPagesList() {
+    const el = document.getElementById('pglist'); el.innerHTML = '';
+    document.getElementById('pageshead').textContent = 'Pages · ' + pgOrder.length;
+    pgOrder.forEach((orig, pos) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--line);color:var(--txt)';
+      const rot = pgRot[orig] || 0;
+      row.innerHTML = '<span style="flex:1">Page ' + (orig + 1) + (rot ? ' · ' + rot + '°' : '') + '</span>';
+      const mk = (t, fn) => { const b = document.createElement('button'); b.className = 'fbtn'; b.textContent = t; b.onclick = fn; return b; };
+      row.appendChild(mk('↻', () => { pgRot[orig] = ((pgRot[orig] || 0) + 90) % 360; renderPagesList(); }));
+      row.appendChild(mk('↑', () => { if (pos > 0) { [pgOrder[pos - 1], pgOrder[pos]] = [pgOrder[pos], pgOrder[pos - 1]]; renderPagesList(); } }));
+      row.appendChild(mk('↓', () => { if (pos < pgOrder.length - 1) { [pgOrder[pos + 1], pgOrder[pos]] = [pgOrder[pos], pgOrder[pos + 1]]; renderPagesList(); } }));
+      row.appendChild(mk('🗑', () => { if (pgOrder.length > 1) { pgOrder.splice(pos, 1); renderPagesList(); } else setStatus('At least one page needed'); }));
+      el.appendChild(row);
+    });
+  }
+  async function buildEditedPdf() {
+    const { PDFDocument, degrees } = PDFLib;
+    const src = await PDFDocument.load(pdfBytes.slice(0), pdfPassword ? { password: pdfPassword } : {});
+    const out = await PDFDocument.create();
+    const copied = await out.copyPages(src, pgOrder);
+    copied.forEach((pg, i) => { const r = pgRot[pgOrder[i]] || 0; if (r) pg.setRotation(degrees((pg.getRotation().angle + r) % 360)); out.addPage(pg); });
+    return await out.saveAsBase64();
+  }
+  document.getElementById('pdfPages').onclick = openPagesPanel;
+  document.getElementById('pagesClose').onclick = () => pagesmodal.classList.remove('show');
+  pagesmodal.addEventListener('click', (e) => { if (e.target === pagesmodal) pagesmodal.classList.remove('show'); });
+  document.getElementById('pgSave').onclick = async () => {
+    if (typeof PDFLib === 'undefined' || !pdfBytes) return;
+    showLoading(true); setStatus('Saving PDF…');
+    try { const out = await buildEditedPdf(); const nm = pdfName.replace(/\.pdf$/i, '') + '-edited.pdf'; savePdfOut(nm, out); pagesmodal.classList.remove('show'); reopenPdfB64(out, nm); setStatus('Saved ' + nm); }
+    catch (e) { setStatus('Save failed: ' + e.message); }
+    showLoading(false);
+  };
+  document.getElementById('pgMerge').onclick = () => { if (AB && AB.pickFor) { pgPendingOp = 'merge'; AB.pickFor('pdf'); } else setStatus('Merge needs the app'); };
+  document.getElementById('pgImages').onclick = () => { if (AB && AB.pickFor) { pgPendingOp = 'image'; AB.pickFor('image'); } else setStatus('Needs the app'); };
+  window.BrahmPicked = async function (b64, name) {
+    const op = pgPendingOp; pgPendingOp = null; if (!op) return;
+    showLoading(true);
+    try {
+      const { PDFDocument } = PDFLib;
+      const cur = await PDFDocument.load(pdfBytes.slice(0), pdfPassword ? { password: pdfPassword } : {});
+      if (op === 'merge') {
+        setStatus('Merging…');
+        const other = await PDFDocument.load(b64ToBytes(b64));
+        const pages = await cur.copyPages(other, other.getPageIndices()); pages.forEach(p => cur.addPage(p));
+        const out = await cur.saveAsBase64(); pagesmodal.classList.remove('show'); reopenPdfB64(out, pdfName.replace(/\.pdf$/i, '') + '-merged.pdf'); setStatus('Merged ' + name);
+      } else if (op === 'image') {
+        setStatus('Adding image…');
+        const bytes = b64ToBytes(b64); const low = (name || '').toLowerCase();
+        const img = low.endsWith('.png') ? await cur.embedPng(bytes) : await cur.embedJpg(bytes);
+        const pg = cur.addPage([img.width, img.height]); pg.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+        const out = await cur.saveAsBase64(); pagesmodal.classList.remove('show'); reopenPdfB64(out, pdfName.replace(/\.pdf$/i, '') + '-img.pdf'); setStatus('Image added');
+      }
+    } catch (e) { setStatus('Failed: ' + e.message); }
+    showLoading(false);
+  };
+  document.getElementById('pgExport').onclick = async () => {
+    if (!pdfDoc || typeof JSZip === 'undefined') { setStatus('Cannot export'); return; }
+    showLoading(true); setStatus('Rendering images…');
+    try {
+      const zip = new JSZip();
+      for (let pos = 0; pos < pgOrder.length; pos++) {
+        const page = await pdfDoc.getPage(pgOrder[pos] + 1);
+        const vp = page.getViewport({ scale: 2 });
+        const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        const dataB64 = cv.toDataURL('image/png').split(',')[1];
+        zip.file('page-' + (pos + 1) + '.png', dataB64, { base64: true });
+      }
+      const outB64 = await zip.generateAsync({ type: 'base64' });
+      const nm = pdfName.replace(/\.pdf$/i, '') + '-images.zip';
+      if (AB && AB.saveFile) AB.saveFile(nm, 'application/zip', outB64);
+      else { const a = document.createElement('a'); a.href = 'data:application/zip;base64,' + outB64; a.download = nm; a.click(); }
+      setStatus('Exported ' + pgOrder.length + ' images → ' + nm);
+    } catch (e) { setStatus('Export failed: ' + e.message); }
+    showLoading(false);
+  };
+  async function newBlankPdf() {
+    if (typeof PDFLib === 'undefined') { setStatus('Cannot create PDF'); return; }
+    try { const { PDFDocument } = PDFLib; const d = await PDFDocument.create(); d.addPage([595, 842]); const b64 = await d.saveAsBase64(); reopenPdfB64(b64, 'new.pdf'); setTimeout(() => { if (currentView === 'pdf') toggleEdit(true); }, 500); }
+    catch (e) { setStatus('Failed: ' + e.message); }
+  }
+
   // ---------- OCR (on-device, via Android ML Kit) ----------
   const ocrModal = document.getElementById('ocrmodal');
   let ocrB64 = null, ocrLang = 'hi';
@@ -867,6 +961,7 @@
     const sec = (t) => { const d = document.createElement('div'); d.className = 'newsection'; d.textContent = t; return d; };
     m.appendChild(sec('Blank'));
     m.appendChild(card('📊', 'Sheet', () => openBook([new E.Sheet('Sheet1')], 'New sheet')));
+    m.appendChild(card('📄', 'PDF', () => newBlankPdf()));
     m.appendChild(card('📝', 'Document', () => showEditableText('', 'document.md')));
     m.appendChild(card('🗒️', 'Note', () => showEditableText('', 'note.txt')));
     m.appendChild(sec('Sheet templates'));

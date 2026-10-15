@@ -87,6 +87,7 @@
       <button class="btn" id="zoomIn">+</button>
       <button class="btn pdfonly" id="pdfEdit" title="Edit PDF">✏️ Edit</button>
       <button class="btn pdfonly" id="pdfOcr" title="Read text (OCR)">🔎 OCR</button>
+      <button class="btn pdfonly" id="pdfPages" title="Organize pages">📑 Pages</button>
       <button class="btn pdfonly" id="pdfLock" title="Password">🔒</button>
     </div>
   </div>
@@ -204,6 +205,19 @@
         </div>
         <div id="frStat" style="color:var(--muted);font-size:12px"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="chartmodal" id="pagesmodal">
+    <div class="chartbox">
+      <div class="charthead"><span id="pageshead">Pages</span><div class="chartbtns"><button class="fbtn" id="pagesClose">✕</button></div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;padding:10px;border-bottom:1px solid var(--line)">
+        <button class="fbtn" id="pgMerge">➕ Merge PDF</button>
+        <button class="fbtn" id="pgImages">🖼 Images→PDF</button>
+        <button class="fbtn" id="pgExport">📤 Export images</button>
+        <button class="fbtn accent" id="pgSave">💾 Save PDF</button>
+      </div>
+      <div id="pglist" style="overflow:auto;max-height:60vh;padding:8px"></div>
     </div>
   </div>
 

@@ -29,6 +29,17 @@ class DocActivity : AppCompatActivity() {
     private val openPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { feedUri(it) }
     }
+    // Picks a file and hands its bytes to the web layer WITHOUT opening it (for merge / image→pdf).
+    private val pickForWeb = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            val name = queryName(uri)
+            val bos = ByteArrayOutputStream(); contentResolver.openInputStream(uri)?.use { it.copyTo(bos) }
+            val b64 = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
+            val safe = name.replace("\\", "").replace("\"", "")
+            runOnUiThread { web.evaluateJavascript("window.BrahmPicked && window.BrahmPicked(\"$b64\",\"$safe\");", null) }
+        } catch (e: Exception) { Toast.makeText(this, "Could not read file", Toast.LENGTH_SHORT).show() }
+    }
     private val savePicker = registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val bytes = saveBytes; saveBytes = null
         if (uri != null && bytes != null) {
@@ -160,6 +171,15 @@ class DocActivity : AppCompatActivity() {
             runOnUiThread {
                 try { openPicker.launch(arrayOf("*/*")) } catch (_: Exception) {}
             }
+        }
+        /** Pick a file and return its bytes to window.BrahmPicked (does NOT open it). kind: "pdf" | "image" | "any" */
+        @JavascriptInterface fun pickFor(kind: String) {
+            val types = when (kind) {
+                "pdf" -> arrayOf("application/pdf")
+                "image" -> arrayOf("image/*")
+                else -> arrayOf("*/*")
+            }
+            runOnUiThread { try { pickForWeb.launch(types) } catch (_: Exception) {} }
         }
         @JavascriptInterface fun saveFile(name: String, mime: String, base64: String) {
             try { saveBytes = Base64.decode(base64, Base64.DEFAULT) } catch (_: Exception) { return }
