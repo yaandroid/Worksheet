@@ -42,9 +42,17 @@ jobs:
       - name: List output
         run: ls -la desktop/dist || dir desktop\dist
         shell: bash
-      - name: Upload installers
+      - name: Upload installers (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.glob }}
           if-no-files-found: warn
+      - name: Publish to Release (single, always-updated)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-latest
+          name: BRAHM Office Desktop (latest)
+          files: ${{ matrix.glob }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
