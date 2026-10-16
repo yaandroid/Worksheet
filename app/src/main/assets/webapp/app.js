@@ -33,6 +33,7 @@
   const pdfview = document.getElementById('pdfview');
   const textview = document.getElementById('textview');
   const htmlview = document.getElementById('htmlview');
+  const wordview = document.getElementById('wordview');
   const loading = document.getElementById('loading');
   const fbar = document.getElementById('fbar');
   const zoombar = document.getElementById('zoombar');
@@ -95,11 +96,12 @@
   // ---------- view switching ----------
   function hideAll() {
     canvas.style.display = 'none'; pdfview.style.display = 'none';
-    textview.style.display = 'none'; htmlview.style.display = 'none';
+    textview.style.display = 'none'; htmlview.style.display = 'none'; wordview.style.display = 'none';
     fbar.style.display = 'none'; zoombar.classList.remove('show'); zoombar.classList.remove('pdfmode'); aclist.classList.remove('show');
     const fb = document.getElementById('fmtbar'); if (fb) fb.classList.remove('show');
     const pt = document.getElementById('pdftools'); if (pt) pt.classList.remove('show');
     const tt = document.getElementById('texttools'); if (tt) tt.classList.remove('show');
+    const wt = document.getElementById('wordtools'); if (wt) wt.classList.remove('show');
     if (editMode) { editMode = false; const eb = document.getElementById('pdfEdit'); if (eb) eb.classList.remove('on'); }
     pdfview.innerHTML = ''; htmlview.src = 'about:blank';
     document.getElementById('gallery').classList.remove('show');
@@ -542,6 +544,7 @@
     if (currentView === 'pdf') { if (pdfDoc) setPdfZoom(pcssScale + dir * 0.35, null, null, true); }
     else if (currentView === 'text') { textFontSize = clamp(textFontSize + dir * 2, 9, 44); textview.style.fontSize = textFontSize + 'px'; }
     else if (currentView === 'html') { htmlZoom = clamp(htmlZoom + dir * 0.15, 0.5, 3); htmlview.style.zoom = htmlZoom; }
+    else if (currentView === 'word') { wordZoom = clamp(wordZoom + dir * 0.1, 0.6, 2.4); const p = wordview.querySelector('.page'); if (p) p.style.fontSize = (16 * wordZoom) + 'px'; }
   }
   document.getElementById('zoomIn').onclick = () => doZoom(1);
   document.getElementById('zoomOut').onclick = () => doZoom(-1);
@@ -951,14 +954,54 @@
     '@media(max-width:700px){.page{padding:26px 20px;margin:8px auto;font-size:15px}}' +
     '</style><meta name="viewport" content="width=device-width,initial-scale=1">';
 
+  // ---------- Word (.docx): view + EDIT + save as real OOXML ----------
+  let wordName = 'document.docx', wordZoom = 1;
+  const wordtools = document.getElementById('wordtools');
+  function showWord(html, name) {
+    hideAll(); currentView = 'word'; wordName = name || 'document.docx'; wordZoom = 1;
+    wordview.innerHTML = '<div class="page" contenteditable="true" spellcheck="false">' + (html || '<p>(empty document)</p>') + '</div>';
+    wordview.querySelector('.page').style.fontSize = '';
+    wordview.style.display = 'block'; wordtools.classList.add('show'); zoombar.classList.add('show');
+    document.getElementById('wordname').textContent = name + '  ·  editable';
+    setStatus('Word · tap text to edit · Save .docx');
+  }
   function openDocx(bytes, name) {
     hideAll(); showLoading(true); setStatus('Opening Word…');
     if (typeof mammoth === 'undefined') { showLoading(false); showText('Word viewer unavailable.'); return; }
     mammoth.convertToHtml({ arrayBuffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) })
-      .then((res) => { showHtml(DOC_CSS + '<div class="page">' + (res.value || '<p>(empty document)</p>') + '</div>'); setStatus('Word · ' + name); })
+      .then((res) => { showWord(res.value || '<p>(empty document)</p>', name); })
       .catch(() => showText('Could not render ' + name))
       .then(() => showLoading(false));
   }
+  function wordExec(cmd, val) { try { document.execCommand('styleWithCSS', false, false); document.execCommand(cmd, false, val || null); } catch (e) {} wordview.querySelector('.page') && wordview.querySelector('.page').focus(); }
+  document.getElementById('wB').onclick = () => wordExec('bold');
+  document.getElementById('wI').onclick = () => wordExec('italic');
+  document.getElementById('wU').onclick = () => wordExec('underline');
+  document.getElementById('wH1').onclick = () => wordExec('formatBlock', 'H1');
+  document.getElementById('wH2').onclick = () => wordExec('formatBlock', 'H2');
+  document.getElementById('wP').onclick = () => wordExec('formatBlock', 'P');
+  document.getElementById('wUL').onclick = () => wordExec('insertUnorderedList');
+  async function buildWordB64() {
+    const page = wordview.querySelector('.page');
+    if (!page || typeof BrahmDocx === 'undefined' || typeof JSZip === 'undefined') return null;
+    return await BrahmDocx.build(page, JSZip);
+  }
+  document.getElementById('wSave').onclick = async () => {
+    showLoading(true); setStatus('Saving .docx…');
+    try { const b64 = await buildWordB64(); if (!b64) { setStatus('Save unavailable'); showLoading(false); return; }
+      const nm = wordName.replace(/\.(docx?|rtf)$/i, '') + '-edited.docx';
+      if (AB && AB.saveFile) AB.saveFile(nm, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b64);
+      else { const u = b64ToBytes(b64); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })); a.download = nm; a.click(); }
+      setStatus('Saved ' + nm);
+    } catch (e) { setStatus('Save failed: ' + e.message); }
+    showLoading(false);
+  };
+  document.getElementById('wShare').onclick = async () => {
+    try { const b64 = await buildWordB64(); if (!b64) return;
+      const nm = wordName.replace(/\.(docx?|rtf)$/i, '') + '.docx';
+      if (AB && AB.shareBytes) AB.shareBytes(nm, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b64);
+    } catch (e) { setStatus('Share failed'); }
+  };
 
   async function openPptx(bytes, name) {
     hideAll(); showLoading(true); setStatus('Opening PowerPoint…');

@@ -30,6 +30,13 @@
   .texttools.show{display:flex}
   .texttools #textname{color:var(--muted);font-size:12px;flex:1;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .htmlview{position:absolute;inset:0;display:none;border:0;width:100%;height:100%;background:#fff}
+  .wordview{position:absolute;inset:0;display:none;overflow:auto;background:#525659;-webkit-overflow-scrolling:touch}
+  .wordview .page{max-width:820px;margin:14px auto;background:#fff;color:#1a1a1a;padding:44px 52px;box-shadow:0 2px 14px rgba(0,0,0,.4);border-radius:3px;font-family:Calibri,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.55;word-wrap:break-word;outline:none}
+  .wordview .page img{max-width:100%;height:auto}
+  .wordview .page h1{font-size:26px;margin:.3em 0 .5em}.wordview .page h2{font-size:21px;margin:.4em 0}.wordview .page h3{font-size:18px}
+  .wordview .page p{margin:.55em 0}.wordview .page table{border-collapse:collapse;width:100%;margin:.6em 0}.wordview .page td,.wordview .page th{border:1px solid #bbb;padding:5px 8px;vertical-align:top}
+  .wordview .page ul,.wordview .page ol{margin:.5em 0 .5em 1.4em}
+  @media(max-width:700px){.wordview .page{padding:24px 18px;margin:8px auto;font-size:15px}}
   .zoombar{display:none;align-items:center;gap:6px}
   .zoombar.show{display:flex}
   .loading{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--muted);font-size:15px;background:var(--bg)}
@@ -158,11 +165,25 @@
     <button class="fbtn accent" id="tSave">💾 Save</button>
   </div>
 
+  <div class="texttools" id="wordtools">
+    <span id="wordname" style="color:var(--muted);font-size:12px;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">document.docx</span>
+    <button class="fbtn" id="wB" title="Bold"><b>B</b></button>
+    <button class="fbtn" id="wI" title="Italic"><i>I</i></button>
+    <button class="fbtn" id="wU" title="Underline"><u>U</u></button>
+    <button class="fbtn" id="wH1" title="Heading 1">H1</button>
+    <button class="fbtn" id="wH2" title="Heading 2">H2</button>
+    <button class="fbtn" id="wP" title="Normal text">¶</button>
+    <button class="fbtn" id="wUL" title="Bullet list">• List</button>
+    <button class="fbtn accent" id="wSave">💾 Save .docx</button>
+    <button class="fbtn" id="wShare">↗ Share</button>
+  </div>
+
   <div class="stage">
     <canvas id="grid"></canvas>
     <div class="pdfview" id="pdfview"></div>
     <textarea class="textview" id="textview" spellcheck="false" autocomplete="off"></textarea>
     <iframe class="htmlview" id="htmlview"></iframe>
+    <div class="wordview" id="wordview"></div>
     <div class="loading" id="loading">Opening…</div>
     <div class="gallery" id="gallery"></div>
     <div class="lightbox" id="lightbox"><img id="lightimg" src=""></div>
@@ -302,6 +323,7 @@
   <script src="vendor/regenerator-runtime.js"></script>
   <script src="vendor/fontkit.umd.min.js"></script>
   <script src="vendor/brahm-font.js"></script>
+  <script src="vendor/docxbuild.js"></script>
   <script src="engine.js"></script>
   <script src="app.js"></script>
 </body>
