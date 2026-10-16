@@ -12,8 +12,9 @@
   const ERR = (code) => ({ t: 'err', code });
   const DIV0 = ERR('#DIV/0!'), VALUE = ERR('#VALUE!'), REF = ERR('#REF!'), NAME = ERR('#NAME?'), NA = ERR('#N/A'), NUM = ERR('#NUM!');
   const Num = (n) => ({ t: 'num', n }); const Str = (s) => ({ t: 'str', s }); const Bool = (b) => ({ t: 'bool', b }); const BLANK = { t: 'blank' };
-  function asNum(v) { if (!v) return 0; if (v.t === 'num') return v.n; if (v.t === 'bool') return v.b ? 1 : 0; if (v.t === 'str') { const d = parseFloat(v.s); return isNaN(d) ? 0 : d; } return 0; }
-  function asStr(v) { if (!v) return ""; switch (v.t) { case 'num': return numToStr(v.n); case 'str': return v.s; case 'bool': return v.b ? "TRUE" : "FALSE"; case 'err': return v.code; default: return ""; } }
+  const Arr = (v) => ({ t: 'arr', v }); // v = 2D array of value objects (dynamic-array / spill)
+  function asNum(v) { if (!v) return 0; if (v.t === 'arr') return asNum((v.v[0] && v.v[0][0]) || BLANK); if (v.t === 'num') return v.n; if (v.t === 'bool') return v.b ? 1 : 0; if (v.t === 'str') { const d = parseFloat(v.s); return isNaN(d) ? 0 : d; } return 0; }
+  function asStr(v) { if (!v) return ""; switch (v.t) { case 'arr': return asStr((v.v[0] && v.v[0][0]) || BLANK); case 'num': return numToStr(v.n); case 'str': return v.s; case 'bool': return v.b ? "TRUE" : "FALSE"; case 'err': return v.code; default: return ""; } }
   function isErr(v) { return v && v.t === 'err'; }
   function numToStr(n) { if (Number.isInteger(n)) return String(n); return String(Math.round(n * 1e10) / 1e10); }
 
@@ -51,8 +52,8 @@
   // ---- Sheet ----
   function Sheet(name) { this.name = name || 'Sheet1'; this.cells = new Map(); this.cache = new Map(); this.visiting = new Set(); }
   Sheet.prototype.raw = function (r, c) { const cell = this.cells.get(key(r, c)); return cell ? cell.input : ''; };
-  Sheet.prototype.set = function (r, c, input) { const k = key(r, c); if (input === '' || input == null) this.cells.delete(k); else this.cells.set(k, { input, ast: undefined }); this.cache.clear(); };
-  Sheet.prototype.value = function (r, c) { return this.eval(key(r, c)); };
+  Sheet.prototype.set = function (r, c, input) { const k = key(r, c); if (input === '' || input == null) this.cells.delete(k); else this.cells.set(k, { input, ast: undefined }); this.cache.clear(); this.spillDirty = true; };
+  // Raw evaluate one cell — may return an Arr (dynamic-array) value.
   Sheet.prototype.eval = function (k) {
     if (this.cache.has(k)) return this.cache.get(k);
     const cell = this.cells.get(k); if (!cell) return BLANK;
@@ -60,11 +61,47 @@
     if (this.visiting.has(k)) return REF;
     this.visiting.add(k);
     let res;
-    try { if (cell.ast === undefined) { try { cell.ast = new Parser(cell.input.slice(1)).parse(); } catch (e) { cell.ast = null; } } res = cell.ast ? new Eval(this, k).eval(cell.ast) : VALUE; }
+    try {
+      if (cell.ast === undefined) { try { cell.ast = new Parser(cell.input.slice(1)).parse(); } catch (e) { cell.ast = null; } }
+      if (!cell.ast) res = VALUE;
+      else { const ev = new Eval(this, k); const g = ev.grid(cell.ast); res = (g.length === 1 && g[0].length === 1) ? g[0][0] : Arr(g); }
+    }
     catch (e) { res = VALUE; } finally { this.visiting.delete(k); }
     this.cache.set(k, res); return res;
   };
-  Sheet.prototype.display = function (r, c) { const cell = this.cells.get(key(r, c)); if (!cell) return ''; if (cell.input[0] !== '=') return cell.input; return asStr(this.value(r, c)); };
+  // Build the spill index: every formula cell that yields an Arr paints its extra cells.
+  Sheet.prototype.ensureSpill = function () {
+    if (!this.spillDirty && this.spillMap) return;
+    this.spillMap = new Map(); this.building = true;
+    try {
+      for (const [k, cell] of this.cells) {
+        if (!cell.input || cell.input[0] !== '=') continue;
+        const v = this.eval(k);
+        if (!v || v.t !== 'arr' || !v.v || !v.v.length) continue;
+        const r0 = Math.floor(k / MAX_COLS), c0 = k % MAX_COLS;
+        for (let i = 0; i < v.v.length; i++) for (let j = 0; j < v.v[i].length; j++) {
+          if (i === 0 && j === 0) continue;                 // origin shows v[0][0] via effVal
+          const rr = r0 + i, cc = c0 + j; if (rr >= MAX_ROWS || cc >= MAX_COLS) continue;
+          const kk = key(rr, cc); if (this.cells.has(kk)) continue;  // don't cover a real cell
+          this.spillMap.set(kk, v.v[i][j] || BLANK);
+        }
+      }
+    } finally { this.building = false; this.spillDirty = false; }
+  };
+  // Scalar value of a cell: unwrap Arr to its corner, and read spilled cells.
+  Sheet.prototype.effVal = function (r, c) {
+    const k = key(r, c), cell = this.cells.get(k);
+    if (cell) { const v = this.eval(k); return (v && v.t === 'arr') ? ((v.v[0] && v.v[0][0]) || BLANK) : v; }
+    if (this.building) return BLANK;
+    this.ensureSpill(); const sv = this.spillMap.get(k); return sv || BLANK;
+  };
+  Sheet.prototype.value = function (r, c) { return this.effVal(r, c); };
+  Sheet.prototype.display = function (r, c) {
+    const cell = this.cells.get(key(r, c));
+    if (cell) { if (cell.input[0] !== '=') return cell.input; return asStr(this.effVal(r, c)); }
+    if (this.building) return '';
+    this.ensureSpill(); const sv = this.spillMap.get(key(r, c)); return sv ? asStr(sv) : '';
+  };
   function literal(s) { const d = Number(s); if (s.trim() !== '' && !isNaN(d)) return Num(d); if (/^true$/i.test(s)) return Bool(true); if (/^false$/i.test(s)) return Bool(false); return Str(s); }
 
   // ---- Evaluator ----
@@ -80,14 +117,29 @@
       case 'call': return Functions.call(n.name, n.args, this);
     } return VALUE;
   };
-  Eval.prototype.bin = function (n) { const l = this.eval(n.l), r = this.eval(n.r); if (isErr(l)) return l; if (isErr(r)) return r;
-    switch (n.op) { case '&': return Str(asStr(l) + asStr(r)); case '+': return Num(asNum(l) + asNum(r)); case '-': return Num(asNum(l) - asNum(r)); case '*': return Num(asNum(l) * asNum(r)); case '/': return asNum(r) === 0 ? DIV0 : Num(asNum(l) / asNum(r)); case '^': return Num(Math.pow(asNum(l), asNum(r)));
+  Eval.prototype.binOp = function (op, l, r) { if (isErr(l)) return l; if (isErr(r)) return r;
+    switch (op) { case '&': return Str(asStr(l) + asStr(r)); case '+': return Num(asNum(l) + asNum(r)); case '-': return Num(asNum(l) - asNum(r)); case '*': return Num(asNum(l) * asNum(r)); case '/': return asNum(r) === 0 ? DIV0 : Num(asNum(l) / asNum(r)); case '^': return Num(Math.pow(asNum(l), asNum(r)));
       case '=': return Bool(cmp(l, r) === 0); case '<>': return Bool(cmp(l, r) !== 0); case '<': return Bool(cmp(l, r) < 0); case '>': return Bool(cmp(l, r) > 0); case '<=': return Bool(cmp(l, r) <= 0); case '>=': return Bool(cmp(l, r) >= 0); }
     return VALUE;
   };
+  Eval.prototype.bin = function (n) { return this.binOp(n.op, this.eval(n.l), this.eval(n.r)); };
+  function broadcast(L, R, fn) {
+    const rows = Math.max(L.length, R.length), cols = Math.max(L[0] ? L[0].length : 1, R[0] ? R[0].length : 1);
+    const get = (G, i, j) => { const row = G[G.length === 1 ? 0 : i] || G[0]; const v = row[row.length === 1 ? 0 : j]; return v === undefined ? BLANK : v; };
+    const out = []; for (let i = 0; i < rows; i++) { const row = []; for (let j = 0; j < cols; j++) row.push(fn(get(L, i, j), get(R, i, j))); out.push(row); } return out;
+  }
   function cmp(a, b) { if (a.t === 'num' && b.t === 'num') return a.n - b.n; if (a.t === 'str' && b.t === 'str') return a.s.toLowerCase() < b.s.toLowerCase() ? -1 : (a.s.toLowerCase() > b.s.toLowerCase() ? 1 : 0); return asStr(a).toLowerCase() < asStr(b).toLowerCase() ? -1 : (asStr(a).toLowerCase() > asStr(b).toLowerCase() ? 1 : 0); }
-  Eval.prototype.flatten = function (n) { if (n.k === 'range') return this.flattenRange(n); return [this.eval(n)]; };
+  Eval.prototype.flatten = function (n) { if (n.k === 'range') return this.flattenRange(n); const v = this.eval(n); if (v && v.t === 'arr') { const out = []; for (const row of v.v) for (const x of row) out.push(x); return out; } return [v]; };
   Eval.prototype.flattenRange = function (n) { const out = []; for (let r = n.r1; r <= n.r2; r++) for (let c = n.c1; c <= n.c2; c++) out.push(this.sheet.value(r, c)); return out; };
+  // 2D grid of values for an argument (range → its rectangle; array value → its rows; scalar → 1×1).
+  Eval.prototype.grid = function (n) {
+    if (!n) return [[BLANK]];
+    if (n.k === 'range') { const g = []; for (let r = n.r1; r <= n.r2; r++) { const row = []; for (let c = n.c1; c <= n.c2; c++) row.push(this.sheet.value(r, c)); g.push(row); } return g; }
+    if (n.k === 'bin') { return broadcast(this.grid(n.l), this.grid(n.r), (x, y) => this.binOp(n.op, x, y)); }
+    if (n.k === 'un') { return this.grid(n.e).map(row => row.map(v => isErr(v) ? v : Num(n.op === '-' ? -asNum(v) : asNum(v)))); }
+    if (n.k === 'pct') { return this.grid(n.e).map(row => row.map(v => Num(asNum(v) / 100))); }
+    const v = this.eval(n); if (v && v.t === 'arr') return v.v; return [[v]];
+  };
   Eval.prototype.numbers = function (args) { const out = []; for (const a of args) for (const v of this.flatten(a)) { if (v.t === 'num') out.push(v.n); else if (v.t === 'bool') out.push(v.b ? 1 : 0); } return out; };
 
   // ---- Functions ----
@@ -260,6 +312,47 @@
   F('ISODD', (a, ev) => Bool(Math.abs(Math.trunc(asNum(ev.eval(a[0]))) % 2) === 1));
   F('ISNONTEXT', (a, ev) => Bool(ev.eval(a[0]).t !== 'str'));
   F('TYPE', (a, ev) => { const v = ev.eval(a[0]); return Num(v.t === 'num' ? 1 : v.t === 'str' ? 2 : v.t === 'bool' ? 4 : isErr(v) ? 16 : 1); });
+
+  // ---- Dynamic arrays (spill): FILTER / SORT / UNIQUE / SEQUENCE / TRANSPOSE ----
+  F('FILTER', (a, ev) => {
+    const g = ev.grid(a[0]); const inc = ev.grid(a[1]);         // inc is a column/row mask
+    const mask = inc.map(row => row[0]);                        // one flag per source row
+    const out = []; for (let i = 0; i < g.length; i++) if (i < mask.length && truthy(mask[i])) out.push(g[i].slice());
+    if (!out.length) return (a.length > 2) ? Arr([[ev.eval(a[2])]]) : NA;
+    return Arr(out);
+  });
+  F('SORT', (a, ev) => {
+    const g = ev.grid(a[0]).map(r => r.slice());
+    const col = (a.length > 1 ? asNum(ev.eval(a[1])) : 1) - 1;
+    const asc = a.length > 2 ? asNum(ev.eval(a[2])) >= 0 : true;
+    g.sort((x, y) => { const d = cmp(x[col] || BLANK, y[col] || BLANK); return asc ? d : -d; });
+    return Arr(g);
+  });
+  F('SORTBY', (a, ev) => {
+    const g = ev.grid(a[0]).map(r => r.slice()); const by = ev.grid(a[1]).map(r => r[0]);
+    const asc = a.length > 2 ? asNum(ev.eval(a[2])) >= 0 : true;
+    const idx = g.map((_, i) => i).sort((p, q) => { const d = cmp(by[p] || BLANK, by[q] || BLANK); return asc ? d : -d; });
+    return Arr(idx.map(i => g[i]));
+  });
+  F('UNIQUE', (a, ev) => {
+    const g = ev.grid(a[0]); const seen = new Set(); const out = [];
+    for (const row of g) { const key = row.map(v => v.t + ':' + asStr(v).toLowerCase()).join('\u0001'); if (!seen.has(key)) { seen.add(key); out.push(row.slice()); } }
+    return out.length ? Arr(out) : NA;
+  });
+  F('SEQUENCE', (a, ev) => {
+    const rows = Math.max(0, Math.trunc(asNum(ev.eval(a[0]))));
+    const cols = a.length > 1 ? Math.max(0, Math.trunc(asNum(ev.eval(a[1])))) : 1;
+    const start = a.length > 2 ? asNum(ev.eval(a[2])) : 1;
+    const step = a.length > 3 ? asNum(ev.eval(a[3])) : 1;
+    const out = []; let n = start;
+    for (let i = 0; i < rows; i++) { const row = []; for (let j = 0; j < cols; j++) { row.push(Num(n)); n += step; } out.push(row); }
+    return out.length ? Arr(out) : NUM;
+  });
+  F('TRANSPOSE', (a, ev) => {
+    const g = ev.grid(a[0]); if (!g.length) return NA; const out = [];
+    for (let c = 0; c < g[0].length; c++) { const row = []; for (let r = 0; r < g.length; r++) row.push(g[r][c] || BLANK); out.push(row); }
+    return Arr(out);
+  });
 
   function eq(a, b) { if (a.t === 'num' && b.t === 'num') return a.n === b.n; return asStr(a).toLowerCase() === asStr(b).toLowerCase(); }
   function stdev(n, sample) { if (n.length < (sample ? 2 : 1)) return DIV0; const m = n.reduce((x, y) => x + y, 0) / n.length; const ss = n.reduce((x, y) => x + (y - m) * (y - m), 0); return Num(Math.sqrt(ss / (sample ? n.length - 1 : n.length))); }
