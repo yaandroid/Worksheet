@@ -1,0 +1,50 @@
+name: Build BRAHM Office Desktop (Windows + macOS)
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'desktop/**'
+      - 'app/src/main/assets/webapp/**'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: dist:win
+            artifact: BRAHM-Office-Windows
+            glob: "desktop/dist/*.exe"
+          - os: macos-latest
+            target: dist:mac
+            artifact: BRAHM-Office-macOS
+            glob: "desktop/dist/*.dmg"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install deps
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Build
+        working-directory: desktop
+        run: npm run ${{ matrix.target }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: List output
+        run: ls -la desktop/dist || dir desktop\dist
+        shell: bash
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.glob }}
+          if-no-files-found: warn
