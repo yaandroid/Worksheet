@@ -147,6 +147,9 @@
     <button class="fbtn" id="fFR" title="Find &amp; Replace">🔎 F&amp;R</button>
     <button class="fbtn" id="fList" title="Dropdown list (data validation)">▾ List</button>
     <button class="fbtn" id="fComment" title="Cell comment">💬 Note</button>
+    <span class="fsep"></span>
+    <button class="fbtn" id="fRange" title="Drag to select a range">⬚ Range</button>
+    <button class="fbtn" id="fCF" title="Conditional formatting rule">🎨 Rule</button>
   </div>
 
   <div class="texttools" id="texttools">
@@ -239,6 +242,40 @@
     <div class="chartbox">
       <div class="charthead"><span id="dvhead">Choose a value</span><div class="chartbtns"><button class="fbtn" id="dvClose">✕</button></div></div>
       <div class="newmenu" id="dvlist" style="grid-template-columns:1fr"></div>
+    </div>
+  </div>
+
+  <div class="chartmodal" id="cfmodal">
+    <div class="chartbox">
+      <div class="charthead"><span id="cfhead">Conditional formatting</span><div class="chartbtns"><button class="fbtn" id="cfClose">✕</button></div></div>
+      <div style="padding:10px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:13px;opacity:.8">Rule applies to the selected range. Colour cells when the condition is true.</div>
+        <label style="display:flex;align-items:center;gap:8px">Condition
+          <select id="cfOp" class="fsel">
+            <option value="gt">greater than &gt;</option>
+            <option value="lt">less than &lt;</option>
+            <option value="ge">≥ at least</option>
+            <option value="le">≤ at most</option>
+            <option value="eq">equal to =</option>
+            <option value="between">between</option>
+            <option value="contains">text contains</option>
+            <option value="notempty">is not empty</option>
+          </select>
+        </label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="cfVal" placeholder="value" style="flex:1;padding:8px;border-radius:8px;border:1px solid #ccc">
+          <input id="cfVal2" placeholder="and" style="flex:1;padding:8px;border-radius:8px;border:1px solid #ccc;display:none">
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px">Fill<input type="color" id="cfBg" value="#ffd54f"></label>
+          <label style="display:flex;align-items:center;gap:6px">Text<input type="color" id="cfFg" value="#8a1c1c"></label>
+          <span id="cfSwatch" style="padding:3px 12px;border-radius:6px;background:#ffd54f;color:#8a1c1c;font-weight:bold">123</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="fbtn accent" id="cfApply">Apply rule</button>
+          <button class="fbtn" id="cfClear">Clear rules on range</button>
+        </div>
+      </div>
     </div>
   </div>
 

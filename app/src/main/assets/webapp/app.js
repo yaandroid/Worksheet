@@ -47,7 +47,50 @@
   const BASE_W = 92, BASE_H = 30;
   let gridZoom = 1;
   let cellW = BASE_W, cellH = BASE_H, rowHead = 46, colHead = 28;
-  let scrollX = 0, scrollY = 0, selR = 0, selC = 0;
+  let scrollX = 0, scrollY = 0, selR = 0, selC = 0, selR2 = 0, selC2 = 0;
+  let rangeMode = false, clipRange = null;
+  const selBox = () => ({ r1: Math.min(selR, selR2), c1: Math.min(selC, selC2), r2: Math.max(selR, selR2), c2: Math.max(selC, selC2) });
+  const hasRange = () => selR2 !== selR || selC2 !== selC;
+  function cellAtXY(x, y) { if (x < rowHead || y < colHead) return null; const c = Math.floor((scrollX + x - rowHead) / cellW), r = Math.floor((scrollY + y - colHead) / cellH); if (r < 0 || r >= E.MAX_ROWS || c < 0 || c >= E.MAX_COLS) return null; return { r, c }; }
+  function fillHandleScreen() { const b = selBox(); return { x: rowHead + (b.c2 + 1) * cellW - scrollX, y: colHead + (b.r2 + 1) * cellH - scrollY }; }
+
+  // ---- conditional formatting ----
+  function cfFor(r, c, v) {
+    const rules = sheet().cf; if (!rules || !rules.length) return null; let out = null;
+    for (const rule of rules) { if (r < rule.r1 || r > rule.r2 || c < rule.c1 || c > rule.c2) continue; if (cfTest(rule, v)) out = { bg: rule.bg, fg: rule.fg }; }
+    return out;
+  }
+  function cfTest(rule, v) {
+    const num = (v && v.t === 'num') ? v.n : null; const str = E.asStr(v || { t: 'blank' }); const tv = String(rule.valText == null ? '' : rule.valText).toLowerCase();
+    switch (rule.op) {
+      case 'gt': return num != null && num > rule.val; case 'lt': return num != null && num < rule.val;
+      case 'ge': return num != null && num >= rule.val; case 'le': return num != null && num <= rule.val;
+      case 'eq': return (num != null && num === rule.val) || str.toLowerCase() === tv;
+      case 'between': return num != null && num >= rule.val && num <= rule.val2;
+      case 'contains': return tv !== '' && str.toLowerCase().includes(tv);
+      case 'notempty': return str.trim() !== '';
+    } return false;
+  }
+
+  // ---- fill handle: copy source cell across the dragged rectangle, adjusting relative refs ----
+  function shiftFormula(input, dr, dc) {
+    if (!input || input[0] !== '=') return input;
+    return input.replace(/(?<![A-Za-z0-9_$])(\$?)([A-Za-z]{1,2})(\$?)(\d{1,6})(?![A-Za-z0-9(])/g, (full, ad, colL, ar, rowD) => {
+      const c = E.colIndex(colL); if (c < 0 || c >= E.MAX_COLS) return full; const r = parseInt(rowD, 10) - 1;
+      const nc = ad ? c : c + dc, nr = ar ? r : r + dr; if (nc < 0 || nr < 0 || nc >= E.MAX_COLS || nr >= E.MAX_ROWS) return '#REF!';
+      return (ad ? '$' : '') + E.colName(nc) + (ar ? '$' : '') + (nr + 1);
+    });
+  }
+  function doFill() {
+    const b = selBox(); if (!hasRange()) return; snapshot(); const s = sheet();
+    const sr = selR, sc = selC, srcInput = s.raw(sr, sc), srcFmt = Object.assign({}, fmtGet(s, sr, sc) || {});
+    for (let r = b.r1; r <= b.r2; r++) for (let c = b.c1; c <= b.c2; c++) {
+      if (r === sr && c === sc) continue;
+      s.set(r, c, shiftFormula(srcInput, r - sr, c - sc));
+      if (Object.keys(srcFmt).length) fmtOf(s)[cellKey(r, c)] = Object.assign({}, srcFmt); else delete fmtOf(s)[cellKey(r, c)];
+    }
+    draw(); setStatus('Filled ' + ((b.r2 - b.r1 + 1) * (b.c2 - b.c1 + 1)) + ' cells');
+  }
 
   // ---------- view switching ----------
   function hideAll() {
@@ -87,16 +130,17 @@
   let freezeOn = false;
   function drawCellAt(r, c, left, top) {
     const f = fmtGet(sheet(), r, c);
-    ctx.fillStyle = (f && f.fill) ? f.fill : ((r % 2 === 0) ? '#fff' : '#fafbfc');
+    const v = sheet().value(r, c);
+    const cf = cfFor(r, c, v);
+    ctx.fillStyle = (cf && cf.bg) ? cf.bg : ((f && f.fill) ? f.fill : ((r % 2 === 0) ? '#fff' : '#fafbfc'));
     ctx.fillRect(left, top, cellW, cellH);
     if (r === selR && c === selC) { ctx.fillStyle = 'rgba(31,157,99,.18)'; ctx.fillRect(left, top, cellW, cellH); }
     ctx.strokeStyle = '#dce1e8'; ctx.lineWidth = 1; ctx.strokeRect(left + .5, top + .5, cellW, cellH);
-    const v = sheet().value(r, c);
     const isNum = v && v.t === 'num';
     let t = (f && f.nf && isNum) ? formatNum(v.n, f.nf) : sheet().display(r, c);
     if (t) { ctx.save(); ctx.beginPath(); ctx.rect(left, top, cellW, cellH); ctx.clip();
       ctx.font = ((f && f.i) ? 'italic ' : '') + ((f && f.b) ? 'bold ' : '') + curFs + 'px sans-serif';
-      ctx.fillStyle = (v && v.t === 'err') ? '#D64541' : ((f && f.color) ? f.color : '#16233F');
+      ctx.fillStyle = (v && v.t === 'err') ? '#D64541' : ((cf && cf.fg) ? cf.fg : ((f && f.color) ? f.color : '#16233F'));
       if (isNum) { ctx.textAlign = 'right'; ctx.fillText(t, left + cellW - 6, top + cellH * .68); }
       else { ctx.textAlign = 'left'; ctx.fillText(t, left + 6, top + cellH * .68); }
       ctx.restore(); ctx.font = curFs + 'px sans-serif'; }
@@ -117,9 +161,13 @@
     const lR = Math.min(E.MAX_ROWS - 1, Math.floor((scrollY + viewH()) / cellH));
     for (let r = fR; r <= lR; r++) { const top = colHead + r * cellH - scrollY;
       for (let c = fC; c <= lC; c++) drawCellAt(r, c, rowHead + c * cellW - scrollX, top); }
-    if (selR >= fR && selR <= lR && selC >= fC && selC <= lC) {
-      const l = rowHead + selC * cellW - scrollX, t = colHead + selR * cellH - scrollY;
-      ctx.strokeStyle = '#1F9D63'; ctx.lineWidth = 2; ctx.strokeRect(l + 1, t + 1, cellW - 2, cellH - 2);
+    { const b = selBox();
+      if (hasRange()) { const l = rowHead + b.c1 * cellW - scrollX, t = colHead + b.r1 * cellH - scrollY, w2 = (b.c2 - b.c1 + 1) * cellW, h2 = (b.r2 - b.r1 + 1) * cellH;
+        ctx.fillStyle = 'rgba(31,157,99,.12)'; ctx.fillRect(l, t, w2, h2); ctx.strokeStyle = '#1F9D63'; ctx.lineWidth = 2; ctx.strokeRect(l + 1, t + 1, w2 - 2, h2 - 2); }
+      if (selR >= fR && selR <= lR && selC >= fC && selC <= lC) { const l = rowHead + selC * cellW - scrollX, t = colHead + selR * cellH - scrollY;
+        ctx.strokeStyle = '#1F9D63'; ctx.lineWidth = 2; ctx.strokeRect(l + 1, t + 1, cellW - 2, cellH - 2); }
+      const hx = rowHead + (b.c2 + 1) * cellW - scrollX, hy = colHead + (b.r2 + 1) * cellH - scrollY;   // fill handle
+      if (hx > rowHead && hy > colHead && hx < w + 8 && hy < h + 8) { ctx.fillStyle = '#1F9D63'; ctx.fillRect(hx - 5, hy - 5, 9, 9); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(hx - 5.5, hy - 5.5, 10, 10); }
     }
     if (freezeOn) {   // pinned first row + first column
       for (let c = fC; c <= lC; c++) if (c !== 0) drawCellAt(0, c, rowHead + c * cellW - scrollX, colHead);
@@ -142,7 +190,7 @@
   // ---------- grid gestures: drag-scroll, tap-select, double-tap zoom, long-press magnify ----------
   let gStartX = 0, gStartY = 0, gSX = 0, gSY = 0, gMoved = false, gScroll = false, gLong = null, gMag = false;
   let gLastTap = 0, gLastX = 0, gLastY = 0;
-  let gPinch = false, gd0 = 0, gz0 = 1;
+  let gPinch = false, gd0 = 0, gz0 = 1, gFillDrag = false, gRangeDrag = false;
   let gVX = 0, gVY = 0, gLastT = 0, gLastMX = 0, gLastMY = 0, gMomentum = null;
   const gDist = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
   function stopMomentum() { if (gMomentum) { cancelAnimationFrame(gMomentum); gMomentum = null; } }
@@ -163,8 +211,12 @@
     if (e.touches.length === 2) { gPinch = true; clearTimeout(gLong); gMag = false; hideLoupe(); gd0 = gDist(e.touches) || 1; gz0 = gridZoom; return; }
     const t = e.touches[0];
     gStartX = t.clientX; gStartY = t.clientY; gSX = scrollX; gSY = scrollY;
-    gMoved = false; gScroll = false; gMag = false;
+    gMoved = false; gScroll = false; gMag = false; gFillDrag = false; gRangeDrag = false;
     gVX = 0; gVY = 0; gLastT = performance.now(); gLastMX = t.clientX; gLastMY = t.clientY;
+    const rect = canvas.getBoundingClientRect(), lx = t.clientX - rect.left, ly = t.clientY - rect.top;
+    const hp = fillHandleScreen();
+    if (Math.abs(lx - hp.x) <= 24 && Math.abs(ly - hp.y) <= 24) { gFillDrag = true; return; }   // grab fill handle
+    if (rangeMode) { const cell = cellAtXY(lx, ly); if (cell) { select(cell.r, cell.c); gRangeDrag = true; draw(); return; } }
     gLong = setTimeout(() => { gMag = true; showLoupeAt(canvas, t.clientX, t.clientY); }, 380);
   }, { passive: true });
 
@@ -173,6 +225,7 @@
         gridZoom = Math.max(0.5, Math.min(3, gz0 * gDist(e.touches) / gd0));
         applyZoom(); scrollX = clamp(scrollX, 0, maxSX()); scrollY = clamp(scrollY, 0, maxSY()); draw(); } return; }
     const t = e.touches[0];
+    if (gFillDrag || gRangeDrag) { if (e.cancelable) e.preventDefault(); const rect = canvas.getBoundingClientRect(); const cell = cellAtXY(t.clientX - rect.left, t.clientY - rect.top); if (cell) { selR2 = cell.r; selC2 = cell.c; draw(); } return; }
     const dx = gStartX - t.clientX, dy = gStartY - t.clientY;
     if (gMag) { showLoupeAt(canvas, t.clientX, t.clientY); if (e.cancelable) e.preventDefault(); return; }
     if (gScroll || Math.abs(dx) + Math.abs(dy) > 6) { gMoved = true; gScroll = true; clearTimeout(gLong);
@@ -185,6 +238,10 @@
 
   canvas.addEventListener('touchend', (e) => {
     clearTimeout(gLong);
+    if (gFillDrag) { gFillDrag = false; doFill(); return; }
+    if (gRangeDrag) { gRangeDrag = false; const b = selBox(); const n = (b.r2 - b.r1 + 1) * (b.c2 - b.c1 + 1); let sum = 0, cnt = 0;
+      for (let r = b.r1; r <= b.r2; r++) for (let c = b.c1; c <= b.c2; c++) { const v = sheet().value(r, c); if (v && v.t === 'num') { sum += v.n; cnt++; } }
+      setStatus('Range ' + E.colName(b.c1) + (b.r1 + 1) + ':' + E.colName(b.c2) + (b.r2 + 1) + ' · ' + n + ' cells' + (cnt ? ' · Sum ' + (Math.round(sum * 100) / 100) + ' · Avg ' + (Math.round(sum / cnt * 100) / 100) : '')); return; }
     if (gPinch) { if (e.touches.length < 2) gPinch = false; return; }
     if (gMag) { gMag = false; hideLoupe(); return; }
     if (gScroll || gMoved) { startMomentum(); return; }
@@ -206,7 +263,7 @@
     applyZoom(); scrollX = clamp(scrollX, 0, maxSX()); scrollY = clamp(scrollY, 0, maxSY()); draw();
   }
 
-  function select(r, c) { commit(); selR = r; selC = c; cellref.textContent = E.colName(c) + (r + 1); finput.value = sheet().raw(r, c); aclist.classList.remove('show'); updateFmtUI(); ensureVis(); draw(); const cm = (sheet().comments || {})[cellKey(r, c)]; if (cm) setStatus('📝 ' + cm); }
+  function select(r, c) { commit(); selR = r; selC = c; selR2 = r; selC2 = c; cellref.textContent = E.colName(c) + (r + 1); finput.value = sheet().raw(r, c); aclist.classList.remove('show'); updateFmtUI(); ensureVis(); draw(); const cm = (sheet().comments || {})[cellKey(r, c)]; if (cm) setStatus('📝 ' + cm); }
   function updateFmtUI() {
     const f = fmtGet(sheet(), selR, selC) || {};
     const fB = document.getElementById('fB'), fI = document.getElementById('fI'), fNF = document.getElementById('fNF');
@@ -1299,6 +1356,38 @@
     if (note === null) return;
     if (note.trim()) cm[k] = note.trim(); else delete cm[k];
     draw(); setStatus(note.trim() ? 'Note added' : 'Note removed');
+  };
+
+  // ---- range select toggle ----
+  document.getElementById('fRange').onclick = () => {
+    rangeMode = !rangeMode; document.getElementById('fRange').classList.toggle('on', rangeMode);
+    setStatus(rangeMode ? 'Range select ON — drag across cells (also drag the green ▪ handle to fill)' : 'Range select off');
+  };
+
+  // ---- conditional formatting ----
+  const cfmodal = document.getElementById('cfmodal');
+  const cfOpEl = document.getElementById('cfOp'), cfValEl = document.getElementById('cfVal'), cfVal2El = document.getElementById('cfVal2');
+  const cfBgEl = document.getElementById('cfBg'), cfFgEl = document.getElementById('cfFg'), cfSwatch = document.getElementById('cfSwatch');
+  function cfSyncUI() {
+    const op = cfOpEl.value; cfVal2El.style.display = (op === 'between') ? '' : 'none';
+    cfValEl.style.display = (op === 'notempty') ? 'none' : '';
+    cfSwatch.style.background = cfBgEl.value; cfSwatch.style.color = cfFgEl.value;
+  }
+  cfOpEl.onchange = cfSyncUI; cfBgEl.oninput = cfSyncUI; cfFgEl.oninput = cfSyncUI;
+  document.getElementById('fCF').onclick = () => { const b = selBox(); document.getElementById('cfhead').textContent = 'Rule for ' + E.colName(b.c1) + (b.r1 + 1) + ':' + E.colName(b.c2) + (b.r2 + 1); cfSyncUI(); cfmodal.classList.add('show'); };
+  document.getElementById('cfClose').onclick = () => cfmodal.classList.remove('show');
+  cfmodal.addEventListener('click', (e) => { if (e.target === cfmodal) cfmodal.classList.remove('show'); });
+  document.getElementById('cfApply').onclick = () => {
+    const s = sheet(); if (!s.cf) s.cf = []; const b = selBox(); const op = cfOpEl.value;
+    const rule = { r1: b.r1, c1: b.c1, r2: b.r2, c2: b.c2, op, bg: cfBgEl.value, fg: cfFgEl.value };
+    const raw = cfValEl.value.trim(); const n = parseFloat(raw);
+    rule.val = isNaN(n) ? null : n; rule.valText = raw; rule.val2 = parseFloat(cfVal2El.value) || 0;
+    s.cf.push(rule); cfmodal.classList.remove('show'); draw(); setStatus('Rule applied to ' + ((b.r2 - b.r1 + 1) * (b.c2 - b.c1 + 1)) + ' cells');
+  };
+  document.getElementById('cfClear').onclick = () => {
+    const s = sheet(); if (!s.cf) { cfmodal.classList.remove('show'); return; } const b = selBox();
+    s.cf = s.cf.filter(ru => ru.r2 < b.r1 || ru.r1 > b.r2 || ru.c2 < b.c1 || ru.c1 > b.c2);
+    cfmodal.classList.remove('show'); draw(); setStatus('Rules cleared on range');
   };
 
   function sortColumn(asc) {
