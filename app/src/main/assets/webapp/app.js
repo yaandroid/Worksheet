@@ -445,6 +445,7 @@
       span.style.top = (tx[5] - fs) + 'px';
       span.style.fontSize = fs + 'px';
       const st = tc.styles[item.fontName]; if (st && st.fontFamily) span.style.fontFamily = st.fontFamily;
+      span.addEventListener('click', function () { editTextSpan(span); });
       layer.appendChild(span);
     }
     wrap.appendChild(layer);
@@ -543,9 +544,61 @@
     g.globalAlpha = 1; g.fillStyle = a.color; g.font = a.size + 'px sans-serif'; g.textBaseline = 'top';
     (a.str || '').split('\n').forEach((ln, i) => g.fillText(ln, a.x, a.y + i * a.size * 1.2)); g.restore();
   }
+  // --- Unicode (Latin + Devanagari) font embed, so edited/added text saves correctly in Hindi too ---
+  function fontBytes() {
+    if (!window.BRAHM_FONT_B64) return null;
+    try { const bin = atob(window.BRAHM_FONT_B64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; } catch (e) { return null; }
+  }
+  async function embedUniFont(doc) {
+    try {
+      const fb = fontBytes();
+      if (fb && window.fontkit && doc.registerFontkit) { doc.registerFontkit(window.fontkit); return await doc.embedFont(fb, { subset: true }); }
+    } catch (e) {}
+    return null; // caller falls back to a standard font
+  }
+  // background colour under a text box (text is usually darker than its background → pick the lightest sample)
+  function sampleBg(meta, x, y, w, h) {
+    try {
+      const k = meta.pxRatio || meta.os; const g = meta.pageCanvas.getContext('2d');
+      const pts = [[x + w + 2, y + h * 0.5], [x - 3, y + h * 0.5], [x + w * 0.5, y - 3], [x + w * 0.5, y + h + 2]];
+      let best = null, bestSum = -1;
+      for (const p of pts) {
+        const sx = Math.round(p[0] * k), sy = Math.round(p[1] * k);
+        if (sx < 0 || sy < 0 || sx >= meta.pageCanvas.width || sy >= meta.pageCanvas.height) continue;
+        const d = g.getImageData(sx, sy, 1, 1).data; const sum = d[0] + d[1] + d[2];
+        if (sum > bestSum) { bestSum = sum; best = d; }
+      }
+      if (best) return '#' + [best[0], best[1], best[2]].map(v => v.toString(16).padStart(2, '0')).join('');
+    } catch (e) {}
+    return '#ffffff';
+  }
+  function measureTextW(size, str, fam) { const g = document.createElement('canvas').getContext('2d'); g.font = size + 'px ' + (fam || 'sans-serif'); return g.measureText(str || '').width; }
+  function drawEditText(meta, a) {
+    const k = meta.pxRatio || meta.os; const g = meta.pageCanvas.getContext('2d'); g.save(); g.setTransform(k, 0, 0, k, 0, 0);
+    g.globalAlpha = 1; g.fillStyle = a.bg || '#ffffff'; g.fillRect(a.x - 1, a.y - 1, a.w + 2, a.h + 2);
+    if (a.str) { g.fillStyle = a.color || '#000'; g.textBaseline = 'top'; g.font = a.size + 'px ' + (a.fontFamily || 'sans-serif'); g.fillText(a.str, a.x, a.y); }
+    g.restore();
+  }
+  // Tapping a text span in "Edit text" mode replaces that run of real PDF text.
+  function editTextSpan(span) {
+    if (!editMode || editTool !== 'edittext') return;
+    const wrap = span.closest('.pdfpage'); const meta = pageMeta.find(m => m.wrap === wrap); if (!meta) return;
+    const cur = (span.dataset.orig != null) ? span.dataset.orig : span.textContent;
+    const val = prompt('Edit this text:', cur);
+    if (val === null) return;
+    const x = span.offsetLeft, y = span.offsetTop, size = parseFloat(span.style.fontSize) || 12, h = size * 1.2;
+    const fam = span.style.fontFamily || 'sans-serif';
+    const w = Math.max(span.offsetWidth, measureTextW(size, val, fam)) + 2;
+    const bg = sampleBg(meta, x, y, w, h);
+    const a = { type: 'edittext', x, y, w, h, size, str: val, color: '#000000', bg, fontFamily: fam };
+    meta.annot.push(a); drawEditText(meta, a);
+    span.dataset.orig = cur; span.textContent = val; // keep search/text-layer in sync (span stays transparent)
+    setStatus('Text changed · Save PDF to keep it');
+  }
   function paintAnnots(meta) {
     for (const a of meta.annot) {
       if (a.type === 'text') drawTextAnnot(meta, a);
+      else if (a.type === 'edittext') drawEditText(meta, a);
       else { if (a.pts.length === 1) strokeSeg(meta, a, a.pts[0], a.pts[0]); for (let i = 1; i < a.pts.length; i++) strokeSeg(meta, a, a.pts[i - 1], a.pts[i]); }
     }
   }
@@ -607,12 +660,16 @@
   function toggleEdit(on) {
     editMode = on; pdftools.classList.toggle('show', on);
     document.getElementById('pdfEdit').classList.toggle('on', on);
-    setStatus(on ? 'Edit mode · draw with finger, T to add text, then Save PDF' : 'PDF · pinch zoom · search above');
+    if (!on || editTool !== 'edittext') pdfview.classList.remove('edittext');
+    else pdfview.classList.add('edittext');
+    setStatus(on ? 'Edit mode · draw, T to add text, ✎T to change real text, then Save PDF' : 'PDF · pinch zoom · search above');
   }
   document.getElementById('pdfEdit').onclick = () => toggleEdit(!editMode);
   document.getElementById('pDone').onclick = () => toggleEdit(false);
   document.querySelectorAll('.ptool').forEach(b => b.onclick = () => {
     document.querySelectorAll('.ptool').forEach(x => x.classList.remove('on')); b.classList.add('on'); editTool = b.getAttribute('data-tool');
+    pdfview.classList.toggle('edittext', editMode && editTool === 'edittext');
+    if (editTool === 'edittext') setStatus('Edit text · tap any highlighted text to change it');
   });
   document.getElementById('pUndo').onclick = () => {
     let m = pageMeta[lastPage];
@@ -628,17 +685,24 @@
     showLoading(true); setStatus('Saving edited PDF…');
     try {
       const { PDFDocument, rgb, StandardFonts, LineCapStyle } = PDFLib;
-      const doc = await PDFDocument.load(pdfBytes);
-      const font = await doc.embedFont(StandardFonts.Helvetica);
+      const doc = await PDFDocument.load(pdfBytes, pdfPassword ? { password: pdfPassword } : {});
+      const uni = await embedUniFont(doc);                       // Latin + Devanagari (Hindi)
+      const font = uni || await doc.embedFont(StandardFonts.Helvetica);
+      const fallbackFont = uni ? await doc.embedFont(StandardFonts.Helvetica) : font;
+      const drawTx = (pg, str, o) => { try { pg.drawText(str, { ...o, font }); } catch (e) { try { pg.drawText(str, { ...o, font: fallbackFont }); } catch (e2) {} } };
       const pages = doc.getPages();
       for (const meta of pageMeta) {
         const pg = pages[meta.pageNum - 1]; if (!pg) continue;
         const sz = pg.getSize(), pw = sz.width, ph = sz.height, fx = pw / meta.cssW, fy = ph / meta.cssH;
         for (const a of meta.annot) {
           const c = hexRgb(a.color);
-          if (a.type === 'text') {
+          if (a.type === 'edittext') {
+            const bgc = hexRgb(a.bg || '#ffffff');
+            pg.drawRectangle({ x: a.x * fx, y: ph - (a.y + a.h) * fy, width: a.w * fx, height: a.h * fy, color: rgb(bgc.r, bgc.g, bgc.b) });
+            if (a.str) drawTx(pg, a.str, { x: a.x * fx, y: ph - (a.y + a.size) * fy, size: a.size * fy, color: rgb(c.r, c.g, c.b) });
+          } else if (a.type === 'text') {
             const lines = (a.str || '').split('\n');
-            lines.forEach((ln, i) => pg.drawText(ln, { x: a.x * fx, y: ph - (a.y + a.size + i * a.size * 1.2) * fy, size: a.size * fy, font, color: rgb(c.r, c.g, c.b) }));
+            lines.forEach((ln, i) => drawTx(pg, ln, { x: a.x * fx, y: ph - (a.y + a.size + i * a.size * 1.2) * fy, size: a.size * fy, color: rgb(c.r, c.g, c.b) }));
           } else {
             const opt = { thickness: a.w * fx, color: rgb(c.r, c.g, c.b), opacity: a.type === 'hl' ? 0.32 : 1, lineCap: LineCapStyle.Round };
             for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1].x * fx, y: ph - a.pts[i - 1].y * fy }, end: { x: a.pts[i].x * fx, y: ph - a.pts[i].y * fy }, ...opt });

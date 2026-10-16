@@ -10,8 +10,10 @@
   #pdfinner{width:fit-content;margin:0 auto}
   .pdfpage{position:relative;margin:8px auto;width:fit-content}
   .pdfview canvas{display:block;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.4)}
-  .textlayer{position:absolute;left:0;top:0;overflow:hidden;opacity:1;line-height:1}
+  .textlayer{position:absolute;left:0;top:0;overflow:hidden;opacity:1;line-height:1;pointer-events:none}
   .textlayer span{position:absolute;color:transparent;white-space:pre;transform-origin:0 0;cursor:text}
+  .pdfview.edittext .textlayer{pointer-events:auto}
+  .pdfview.edittext .textlayer span{pointer-events:auto;background:rgba(31,157,99,.10);outline:1px dashed rgba(31,157,99,.5);cursor:pointer}
   .textlayer span.hl{background:rgba(232,163,61,.45);color:transparent;border-radius:2px}
   .textlayer span.hlcur{background:rgba(31,157,99,.55)}
   .textlayer ::selection{background:rgba(31,157,99,.4)}
@@ -97,6 +99,7 @@
     <button class="fbtn ptool on" data-tool="pen">✎ Pen</button>
     <button class="fbtn ptool" data-tool="hl">🖍 Mark</button>
     <button class="fbtn ptool" data-tool="text">T Text</button>
+    <button class="fbtn ptool" data-tool="edittext">✎T Edit text</button>
     <label class="fbtn">Color<input type="color" id="pColor" value="#d64541"></label>
     <select id="pSize" class="fsel">
       <option value="2">Thin</option>
@@ -259,6 +262,9 @@
   <script src="vendor/jszip.min.js"></script>
   <script src="vendor/mammoth.min.js"></script>
   <script src="vendor/pdf-lib.min.js"></script>
+  <script src="vendor/regenerator-runtime.js"></script>
+  <script src="vendor/fontkit.umd.min.js"></script>
+  <script src="vendor/brahm-font.js"></script>
   <script src="engine.js"></script>
   <script src="app.js"></script>
 </body>
