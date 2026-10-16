@@ -975,20 +975,27 @@
     if (typeof BrahmDocx === 'undefined' || typeof JSZip === 'undefined') { setStatus('Cannot convert'); return; }
     showLoading(true);
     try {
-      const root = document.createElement('div'); let any = false;
+      const root = document.createElement('div'); let any = false, lastErr = '', pagesDone = 0;
       for (let n = 1; n <= pdfDoc.numPages; n++) {
         setStatus('OCR page ' + n + '/' + pdfDoc.numPages + '…');
-        const png = await pageToPngB64(n);
-        const res = await ocrImage(png, 'hi');          // Devanagari+Latin → Hindi & English
+        const img = await pageToImgB64(n);
+        const res = await ocrImage(img, 'hi', () => setStatus('हिंदी OCR model download ho raha hai… (page ' + n + ')'));
+        if (res.err) lastErr = res.err;
         if (res.text && res.text.trim()) {
+          pagesDone++;
           res.text.split(/\r?\n/).forEach(line => { const t = line.trim(); if (t) { const p = document.createElement('p'); p.textContent = t; root.appendChild(p); any = true; } });
           if (n < pdfDoc.numPages) root.appendChild(document.createElement('p'));
         }
       }
-      if (!any) { const p = document.createElement('p'); p.textContent = '(No text recognised.)'; root.appendChild(p); }
+      if (!any) {
+        showLoading(false);
+        const dl = /download|model|wait|unavailable|not-ready|timeout/i.test(lastErr);
+        setStatus(dl ? 'Hindi OCR model abhi download nahi hua — internet ON karke pehle ek page OCR (🔎) chalao, phir convert karo' : 'OCR ne text nahi padha (err: ' + (lastErr || 'none') + ')');
+        return;
+      }
       const b64 = await BrahmDocx.build(root, JSZip); const nm = pdfName.replace(/\.pdf$/i, '') + '-ocr.docx';
       if (AB && AB.saveFile) AB.saveFile(nm, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b64);
-      setStatus('Saved ' + nm + ' — open to edit');
+      setStatus('Saved ' + nm + ' · ' + pagesDone + '/' + pdfDoc.numPages + ' pages read — open to edit');
     } catch (e) { setStatus('OCR convert failed: ' + e.message); }
     showLoading(false);
   };
@@ -1047,22 +1054,37 @@
     if (err) { document.getElementById('ocrtext').textContent = 'OCR error: ' + err; return; }
     document.getElementById('ocrtext').textContent = txt.trim() || '(no text found on this page)';
   };
-  // OCR one PDF page (render → ML Kit). Devanagari recognizer also reads Latin, so Hindi+English both come right.
-  function ocrImage(b64png, lang) {
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  function ocrOnce(b64img, lang) {
     return new Promise((resolve) => {
       if (!(AB && AB.ocr)) { resolve({ text: '', err: 'needs app' }); return; }
-      __ocrResolve = resolve; try { AB.ocr(b64png, lang); } catch (e) { __ocrResolve = null; resolve({ text: '', err: 'ocr failed' }); }
-      setTimeout(() => { if (__ocrResolve === resolve) { __ocrResolve = null; resolve({ text: '', err: 'timeout' }); } }, 25000);
+      __ocrResolve = resolve; try { AB.ocr(b64img, lang); } catch (e) { __ocrResolve = null; resolve({ text: '', err: 'ocr failed' }); }
+      setTimeout(() => { if (__ocrResolve === resolve) { __ocrResolve = null; resolve({ text: '', err: 'timeout' }); } }, 40000);
     });
   }
-  async function pageToPngB64(n) {
+  // Retry while the ML Kit language model is still downloading on first use.
+  async function ocrImage(b64img, lang, onWait) {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const res = await ocrOnce(b64img, lang);
+      if (res.text && res.text.trim()) return res;
+      const e = (res.err || '').toLowerCase();
+      if (e.includes('download') || e.includes('wait') || e.includes('model') || e.includes('unavailable') || e.includes('timeout')) {
+        if (onWait) onWait(attempt); await sleep(3500); continue;
+      }
+      return res;
+    }
+    return { text: '', err: 'model-not-ready' };
+  }
+  // Render a page to a sharp JPEG (smaller than PNG at high res → better OCR, safe over the bridge).
+  async function pageToImgB64(n) {
     const page = await pdfDoc.getPage(n);
     const base = page.getViewport({ scale: 1 });
-    let eff = Math.min(2.5, 2200 / base.width);          // crisp enough for OCR, capped
+    let eff = Math.min(3.2, 2800 / base.width);          // higher DPI → sharper glyphs → more accurate OCR
     const vp = page.getViewport({ scale: eff });
     const cv = document.createElement('canvas'); cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
-    await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-    return cv.toDataURL('image/png').split(',')[1];
+    const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+    await page.render({ canvasContext: g, viewport: vp }).promise;
+    return cv.toDataURL('image/jpeg', 0.92).split(',')[1];
   }
   document.querySelectorAll('.olang').forEach(b => b.onclick = () => runOcr(b.getAttribute('data-ol')));
   document.getElementById('ocrClose').onclick = () => ocrModal.classList.remove('show');
