@@ -50,6 +50,14 @@ class MainActivity : AppCompatActivity() {
 
     private val permLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { reload() }
     private val openDoc = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { openUri(it) } }
+    private val scanLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        if (res.resultCode == RESULT_OK) {
+            try {
+                val result = com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult.fromActivityResultIntent(res.data)
+                result?.pdf?.uri?.let { openScannedPdf(it) }
+            } catch (e: Exception) { android.widget.Toast.makeText(this, "Scan failed", android.widget.Toast.LENGTH_SHORT).show() }
+        }
+    }
     private val openTree = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             try { contentResolver.takePersistableUriPermission(uri,
@@ -180,10 +188,7 @@ class MainActivity : AppCompatActivity() {
             }
             t.action == "open" -> pickFile()
             t.action == "new" -> startActivity(Intent(this, DocActivity::class.java))
-            t.action == "scan" -> AlertDialog.Builder(this)
-                .setTitle("Scan → PDF")
-                .setMessage("Camera document scanning is coming in the next update — capture multiple pages and save as a PDF.")
-                .setPositiveButton("OK", null).show()
+            t.action == "scan" -> launchScanner()
         }
     }
     private fun updateSectionLabel() {
@@ -307,6 +312,29 @@ class MainActivity : AppCompatActivity() {
         val out = ArrayList<Any>()
         for (k in orderedKeys) { out.add("📁  $k"); out.addAll(sortFiles(groups[k]!!)) }
         adapter.submit(out)
+    }
+
+    private fun launchScanner() {
+        try {
+            val opt = com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.Builder()
+                .setGalleryImportAllowed(true)
+                .setPageLimit(50)
+                .setResultFormats(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
+                .setScannerMode(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                .build()
+            com.google.mlkit.vision.documentscanner.GmsDocumentScanning.getClient(opt)
+                .getStartScanIntent(this)
+                .addOnSuccessListener { sender -> scanLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(sender).build()) }
+                .addOnFailureListener { e -> android.widget.Toast.makeText(this, "Scanner unavailable: ${e.message}", android.widget.Toast.LENGTH_LONG).show() }
+        } catch (e: Exception) { android.widget.Toast.makeText(this, "Scanner not available on this device", android.widget.Toast.LENGTH_LONG).show() }
+    }
+
+    private fun openScannedPdf(uri: Uri) {
+        try {
+            val out = File(cacheDir, "BRAHM-Scan-${System.currentTimeMillis()}.pdf")
+            contentResolver.openInputStream(uri)?.use { input -> out.outputStream().use { input.copyTo(it) } }
+            Recents.add(this, out.absolutePath); routeFile(out.absolutePath)
+        } catch (e: Exception) { android.widget.Toast.makeText(this, "Could not open scan", android.widget.Toast.LENGTH_SHORT).show() }
     }
 
     private fun updateSelBar(count: Int) {
