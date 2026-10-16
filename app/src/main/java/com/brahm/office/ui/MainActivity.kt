@@ -88,6 +88,11 @@ class MainActivity : AppCompatActivity() {
         adapter = FileAdapter(emptyList(), { open(it) }, { count -> updateSelBar(count) })
         list.adapter = adapter
 
+        val swipe = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipe)
+        swipe.setColorSchemeColors(Color.parseColor("#E8A33D"), Color.parseColor("#1F9D63"), Color.parseColor("#2B579A"))
+        swipe.setOnChildScrollUpCallback { _, _ -> list.canScrollVertically(-1) }
+        swipe.setOnRefreshListener { reload(); swipe.postDelayed({ swipe.isRefreshing = false }, 350) }
+
         findViewById<Button>(R.id.selShare).setOnClickListener { shareSelected() }
         findViewById<Button>(R.id.selCancel).setOnClickListener { adapter.clearSelection() }
 
@@ -120,10 +125,10 @@ class MainActivity : AppCompatActivity() {
     // ---------- dashboard tile grid ----------
     private data class Tile(val icon: String, val label: String, val color: String, val action: String)
     private val tileDefs = listOf(
-        Tile("📄", "PDF", "#D64541", "type:PDF"),
-        Tile("📊", "Excel", "#1F9D63", "type:EXCEL"),
-        Tile("📝", "Word", "#2B579A", "type:WORD"),
-        Tile("📽", "PPT", "#D24726", "type:PPT"),
+        Tile("📄", "PDF", "#D64541", "cat:PDF"),
+        Tile("📊", "Excel", "#1F9D63", "cat:EXCEL"),
+        Tile("📝", "Word", "#2B579A", "cat:WORD"),
+        Tile("📽", "PPT", "#D24726", "cat:PPT"),
         Tile("🗂", "All files", "#5B6472", "type:ALL"),
         Tile("📂", "Open", "#E8A33D", "open"),
         Tile("➕", "New sheet", "#16233F", "new"),
@@ -181,6 +186,7 @@ class MainActivity : AppCompatActivity() {
     }
     private fun onTile(t: Tile) {
         when {
+            t.action.startsWith("cat:") -> startActivity(Intent(this, ToolsActivity::class.java).putExtra("category", t.action.substring(4)))
             t.action.startsWith("type:") -> {
                 typeFilter = t.action.substring(5)
                 tabsView.getTabAt(1)?.select()   // switch to All; its listener reloads

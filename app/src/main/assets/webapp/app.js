@@ -405,7 +405,38 @@
     await renderPdf();
     setStatus('PDF · ' + pdfDoc.numPages + ' pages · pinch zoom · ✏️ Edit to annotate');
     showLoading(false);
+    runPendingAuto();
   }
+  // A tool chosen on the home "PDF tools" screen is auto-run once the file is open.
+  function runPendingAuto() {
+    const a = window.__brahmAuto; if (!a) return; window.__brahmAuto = null;
+    setTimeout(() => { try { brahmAuto(a); } catch (e) {} }, 350);
+  }
+  function brahmAuto(tool) {
+    const click = (id) => { const el = document.getElementById(id); if (el) el.click(); };
+    switch (tool) {
+      case 'pwadd': click('pdfLock'); break;
+      case 'pwremove': click('pdfLock'); setTimeout(() => click('pwRemove'), 250); break;
+      case 'convert': click('pdfConvert'); break;
+      case 'toword': click('cv2wordOcr'); break;
+      case 'towordlook': click('cv2wordLook'); break;
+      case 'totext': click('cv2text'); break;
+      case 'toimages': click('cv2imgs'); break;
+      case 'img2pdf': click('cvImg2pdf'); break;
+      case 'pages': click('pdfPages'); break;
+      case 'ocr': click('pdfOcr'); break;
+      case 'edit': toggleEdit(true); break;
+      case 'search': { const s = document.getElementById('pdfSearch'); if (s) s.focus(); break; }
+    }
+  }
+  window.BrahmAuto = function (tool) { window.__brahmAuto = tool; };   // set before/with the file open
+  window.BrahmNew = function (type) {
+    const t = (type || '').toLowerCase();
+    if (t === 'pdf') { newBlankPdf(); }
+    else if (t === 'word' || t === 'doc') { showWord('<p><br></p>', 'Untitled.docx'); }
+    else if (t === 'sheet' || t === 'excel') { openBook([new E.Sheet('Sheet1')], 'New spreadsheet'); }
+    else { openBook([new E.Sheet('Sheet1')], 'New spreadsheet'); }
+  };
   // pdf-lib load options — ignoreEncryption lets owner/permission-encrypted PDFs (e.g. bank statements) load & save.
   function loadOpts(pw) { const o = { ignoreEncryption: true }; if (pw) o.password = pw; return o; }
   function savePdfOut(nm, b64) {
@@ -997,6 +1028,32 @@
       if (AB && AB.saveFile) AB.saveFile(nm, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b64);
       setStatus('Saved ' + nm + ' · ' + pagesDone + '/' + pdfDoc.numPages + ' pages read — open to edit');
     } catch (e) { setStatus('OCR convert failed: ' + e.message); }
+    showLoading(false);
+  };
+  // Same-look: each PDF page becomes a full-width picture in the Word doc → logo/layout exactly like the PDF.
+  document.getElementById('cv2wordLook').onclick = async () => {
+    convmodal.classList.remove('show'); if (!pdfDoc) return;
+    if (typeof BrahmDocx === 'undefined' || typeof JSZip === 'undefined') { setStatus('Cannot convert'); return; }
+    showLoading(true);
+    try {
+      const root = document.createElement('div');
+      for (let n = 1; n <= pdfDoc.numPages; n++) {
+        setStatus('Rendering page ' + n + '/' + pdfDoc.numPages + '…');
+        const page = await pdfDoc.getPage(n); const base = page.getViewport({ scale: 1 });
+        let eff = Math.min(3, 2400 / base.width); const vp = page.getViewport({ scale: eff });
+        const cv = document.createElement('canvas'); cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+        const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+        await page.render({ canvasContext: g, viewport: vp }).promise;
+        const img = document.createElement('img');
+        img.setAttribute('src', cv.toDataURL('image/jpeg', 0.9));
+        img.setAttribute('data-w', cv.width); img.setAttribute('data-h', cv.height);
+        root.appendChild(img);
+      }
+      const b64 = await BrahmDocx.build(root, JSZip); const nm = pdfName.replace(/\.pdf$/i, '') + '-look.docx';
+      if (AB && AB.saveFile) AB.saveFile(nm, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b64);
+      else { const u = b64ToBytes(b64); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })); a.download = nm; a.click(); }
+      setStatus('Saved ' + nm + ' — looks exactly like the PDF');
+    } catch (e) { setStatus('Convert failed: ' + e.message); }
     showLoading(false);
   };
   document.getElementById('cv2text').onclick = async () => {

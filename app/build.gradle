@@ -13,7 +13,7 @@ android {
         applicationId "com.brahm.office"
         minSdk 24
         targetSdk 35
-        versionCode 38          // internal — may bump silently so updates install
+        versionCode 39          // internal — may bump silently so updates install
         versionName "1.1"      // visible — stays 1.1 unless Sandeep says to bump
         vectorDrawables { useSupportLibrary true }
     }
@@ -62,6 +62,7 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
     implementation 'androidx.documentfile:documentfile:1.0.1'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'androidx.lifecycle:lifecycle-process:2.8.7'

@@ -32,6 +32,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Per-category tools grid (PDF tools, Excel, …) -->
+        <activity
+            android:name=".ui.ToolsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.BrahmOffice" />
+
         <!-- App-lock screen (PIN / fingerprint) -->
         <activity
             android:name=".ui.LockActivity"

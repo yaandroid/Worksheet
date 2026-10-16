@@ -53,6 +53,25 @@
     return x + '</w:tbl>';
   }
 
+  // ---- images (e.g. a whole PDF page rendered as a picture so the Word looks exactly like the PDF) ----
+  let IMGS = [];
+  function imgPara(img) {
+    const src = img.getAttribute('src') || '';
+    const m = /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(src); if (!m) return '<w:p/>';
+    const ext = /png/i.test(m[1]) ? 'png' : 'jpeg';
+    const id = IMGS.length + 1, rId = 'rIdImg' + id;
+    const w = parseInt(img.getAttribute('data-w')) || img.naturalWidth || 800;
+    const h = parseInt(img.getAttribute('data-h')) || img.naturalHeight || 1100;
+    const cx = 5734050, cy = Math.max(1, Math.round(cx * (h / w)));   // full content width (~6.27in), keep aspect
+    IMGS.push({ rId: rId, data: m[2], ext: ext, id: id });
+    return '<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="0"/></w:pPr><w:r><w:drawing>' +
+      '<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:docPr id="' + id + '" name="Page' + id + '"/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>' +
+      '<pic:nvPicPr><pic:cNvPr id="' + id + '" name="Page' + id + '"/><pic:cNvPicPr/></pic:nvPicPr>' +
+      '<pic:blipFill><a:blip r:embed="' + rId + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+      '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
+      '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>';
+  }
   // Build the <w:body> inner xml from a root element's block children.
   function bodyXml(root) {
     const parts = [];
@@ -60,9 +79,10 @@
       for (let c = node.firstChild; c; c = c.nextSibling) {
         if (c.nodeType !== 1) continue;             // skip stray text/whitespace (mammoth wraps real text in blocks)
         const tag = c.tagName.toUpperCase();
+        if (tag === 'IMG') { parts.push(imgPara(c)); continue; }
         if (tag === 'UL' || tag === 'OL') { const numId = tag === 'OL' ? 2 : 1; c.querySelectorAll(':scope > li').forEach(li => parts.push(listPara(li, numId))); continue; }
         if (tag === 'TABLE') { parts.push(tableXml(c)); continue; }
-        if (BLOCK[tag]) { parts.push(para(c)); continue; }
+        if (BLOCK[tag]) { const im = c.querySelector && c.querySelector('img'); if (im && !c.textContent.trim()) { parts.push(imgPara(im)); continue; } parts.push(para(c)); continue; }
         // unknown container → recurse so nested blocks are caught
         walk(c);
       }
@@ -72,20 +92,29 @@
     return parts.join('');
   }
 
-  const CT = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
-    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
-    '<Default Extension="xml" ContentType="application/xml"/>' +
-    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
-    '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
-    '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>';
+  function ctXml() {
+    let imgDefs = '';
+    if (IMGS.some(i => i.ext === 'png')) imgDefs += '<Default Extension="png" ContentType="image/png"/>';
+    if (IMGS.some(i => i.ext === 'jpeg')) imgDefs += '<Default Extension="jpeg" ContentType="image/jpeg"/>';
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' + imgDefs +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+      '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>';
+  }
   const RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>';
-  const DOCRELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
-    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>';
+  function docRelsXml() {
+    let img = '';
+    IMGS.forEach(im => { img += '<Relationship Id="' + im.rId + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image' + im.id + '.' + im.ext + '"/>'; });
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>' + img + '</Relationships>';
+  }
   function heading(id, name, sz, color) {
     return '<w:style w:type="paragraph" w:styleId="' + id + '"><w:name w:val="' + name + '"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="200" w:after="80"/></w:pPr>' +
       '<w:rPr><w:b/><w:color w:val="' + color + '"/><w:sz w:val="' + sz + '"/></w:rPr></w:style>';
@@ -107,7 +136,7 @@
 
   function documentXml(root) {
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
       '<w:body>' + bodyXml(root) +
       '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/></w:sectPr>' +
       '</w:body></w:document>';
@@ -115,14 +144,17 @@
 
   // Returns a Promise resolving to a base64 .docx string. JSZip is passed in (vendored).
   function build(rootEl, JSZip) {
+    IMGS = [];
+    const docXml = documentXml(rootEl);          // populates IMGS as it walks
     const zip = new JSZip();
-    zip.file('[Content_Types].xml', CT);
+    zip.file('[Content_Types].xml', ctXml());
     zip.folder('_rels').file('.rels', RELS);
     const w = zip.folder('word');
-    w.file('document.xml', documentXml(rootEl));
+    w.file('document.xml', docXml);
     w.file('styles.xml', STYLES);
     w.file('numbering.xml', NUMBERING);
-    w.folder('_rels').file('document.xml.rels', DOCRELS);
+    w.folder('_rels').file('document.xml.rels', docRelsXml());
+    if (IMGS.length) { const media = w.folder('media'); IMGS.forEach(im => media.file('image' + im.id + '.' + im.ext, im.data, { base64: true })); }
     return zip.generateAsync({ type: 'base64', compression: 'DEFLATE' });
   }
 

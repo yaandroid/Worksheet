@@ -110,8 +110,13 @@ class DocActivity : AppCompatActivity() {
 
     override fun onResume() { super.onResume(); com.brahm.office.util.AppLock.guard(this) }
 
+    private var pendingAuto: String? = null     // tool to auto-run after the file opens
+    private var pendingNew: String? = null       // create a new blank doc of this type
+
     private fun handleIncoming(intent: Intent?) {
         intent ?: return
+        pendingAuto = intent.getStringExtra("autotool")
+        intent.getStringExtra("newdoc")?.let { nd -> pendingNew = nd; if (pageReady) flushPending(); return }
         intent.getStringExtra("path")?.let { path ->
             try { feedBytes(java.io.File(path).readBytes(), java.io.File(path).name) } catch (_: Exception) {}
             return
@@ -142,10 +147,17 @@ class DocActivity : AppCompatActivity() {
     }
 
     private fun flushPending() {
+        pendingNew?.let { nd ->
+            pendingNew = null
+            runOnUiThread { web.evaluateJavascript("window.BrahmNew(\"$nd\");", null) }
+            return
+        }
         val b64 = pendingB64 ?: return
         val name = (pendingName ?: "document").replace("\\", "").replace("\"", "")
         pendingB64 = null; pendingName = null
+        val auto = pendingAuto
         runOnUiThread {
+            if (auto != null) web.evaluateJavascript("window.BrahmAuto(\"$auto\");", null)
             web.evaluateJavascript("window.BrahmOpen(\"$b64\",\"$name\");", null)
         }
     }
