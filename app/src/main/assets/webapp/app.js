@@ -868,6 +868,57 @@
     } catch (e) { setStatus('Export failed: ' + e.message); }
     showLoading(false);
   };
+  // ---------- Convert hub (PDF → Word / Text / Images, Images → PDF) ----------
+  const convmodal = document.getElementById('convmodal');
+  document.getElementById('pdfConvert').onclick = () => { if (pdfDoc) convmodal.classList.add('show'); else setStatus('Open a PDF first'); };
+  document.getElementById('convClose').onclick = () => convmodal.classList.remove('show');
+  convmodal.addEventListener('click', (e) => { if (e.target === convmodal) convmodal.classList.remove('show'); });
+  // Extract text as paragraphs (group by line y, merge lines into paragraphs on big gaps).
+  async function pdfTextParagraphs() {
+    const pages = [];
+    for (let n = 1; n <= pdfDoc.numPages; n++) {
+      const page = await pdfDoc.getPage(n); const tc = await page.getTextContent();
+      const lines = [];
+      for (const it of tc.items) { if (it.str == null) continue; const y = Math.round(it.transform[5]); const x = it.transform[4];
+        let ln = lines.find(l => Math.abs(l.y - y) <= 3); if (!ln) { ln = { y, parts: [] }; lines.push(ln); } ln.parts.push({ x, s: it.str }); }
+      lines.sort((a, b) => b.y - a.y); lines.forEach(l => l.parts.sort((a, b) => a.x - b.x));
+      const paras = []; let cur = '', prevY = null;
+      for (const l of lines) { const s = l.parts.map(p => p.s).join('').replace(/\s+/g, ' ').trim(); if (!s) { if (cur) { paras.push(cur); cur = ''; } prevY = null; continue; }
+        const gap = prevY == null ? 0 : (prevY - l.y); if (prevY != null && gap > 18) { if (cur) { paras.push(cur); cur = ''; } }
+        cur = cur ? (cur + ' ' + s) : s; prevY = l.y; }
+      if (cur) paras.push(cur);
+      pages.push(paras);
+    }
+    return pages; // array per page of paragraph strings
+  }
+  document.getElementById('cv2word').onclick = async () => {
+    convmodal.classList.remove('show'); if (!pdfDoc || typeof BrahmDocx === 'undefined' || typeof JSZip === 'undefined') { setStatus('Cannot convert'); return; }
+    showLoading(true); setStatus('PDF → Word…');
+    try {
+      const pages = await pdfTextParagraphs(); const root = document.createElement('div'); let any = false;
+      pages.forEach((paras, i) => { paras.forEach(t => { const p = document.createElement('p'); p.textContent = t; root.appendChild(p); any = true; }); if (i < pages.length - 1) root.appendChild(document.createElement('p')); });
+      if (!any) { const p = document.createElement('p'); p.textContent = '(No real text found — this PDF looks scanned. Use OCR, then paste into Word.)'; root.appendChild(p); }
+      const b64 = await BrahmDocx.build(root, JSZip); const nm = pdfName.replace(/\.pdf$/i, '') + '.docx';
+      if (AB && AB.saveFile) AB.saveFile(nm, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b64);
+      else { const u = b64ToBytes(b64); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })); a.download = nm; a.click(); }
+      setStatus('Saved ' + nm + ' — open it to edit');
+    } catch (e) { setStatus('Convert failed: ' + e.message); }
+    showLoading(false);
+  };
+  document.getElementById('cv2text').onclick = async () => {
+    convmodal.classList.remove('show'); if (!pdfDoc) return; showLoading(true); setStatus('PDF → Text…');
+    try {
+      const pages = await pdfTextParagraphs(); const txt = pages.map(ps => ps.join('\n\n')).join('\n\n──────\n\n');
+      const b64 = btoa(unescape(encodeURIComponent(txt))); const nm = pdfName.replace(/\.pdf$/i, '') + '.txt';
+      if (AB && AB.saveFile) AB.saveFile(nm, 'text/plain', b64);
+      else { const a = document.createElement('a'); a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(txt); a.download = nm; a.click(); }
+      setStatus('Saved ' + nm);
+    } catch (e) { setStatus('Convert failed: ' + e.message); }
+    showLoading(false);
+  };
+  document.getElementById('cv2imgs').onclick = () => { convmodal.classList.remove('show'); if (!pgOrder.length && pdfDoc) { pgOrder = []; for (let i = 0; i < pdfDoc.numPages; i++) pgOrder.push(i); } document.getElementById('pgExport').click(); };
+  document.getElementById('cvImg2pdf').onclick = () => { convmodal.classList.remove('show'); document.getElementById('pgImages').click(); };
+
   async function newBlankPdf() {
     if (typeof PDFLib === 'undefined') { setStatus('Cannot create PDF'); return; }
     try { const { PDFDocument } = PDFLib; const d = await PDFDocument.create(); d.addPage([595, 842]); const b64 = await d.saveAsBase64(); reopenPdfB64(b64, 'new.pdf'); setTimeout(() => { if (currentView === 'pdf') toggleEdit(true); }, 500); }

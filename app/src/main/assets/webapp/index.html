@@ -98,6 +98,7 @@
       <button class="btn pdfonly" id="pdfEdit" title="Edit PDF">✏️ Edit</button>
       <button class="btn pdfonly" id="pdfOcr" title="Read text (OCR)">🔎 OCR</button>
       <button class="btn pdfonly" id="pdfPages" title="Organize pages">📑 Pages</button>
+      <button class="btn pdfonly" id="pdfConvert" title="Convert">➜ Convert</button>
       <button class="btn pdfonly" id="pdfLock" title="Password">🔒</button>
     </div>
   </div>
@@ -263,6 +264,19 @@
     <div class="chartbox">
       <div class="charthead"><span id="dvhead">Choose a value</span><div class="chartbtns"><button class="fbtn" id="dvClose">✕</button></div></div>
       <div class="newmenu" id="dvlist" style="grid-template-columns:1fr"></div>
+    </div>
+  </div>
+
+  <div class="chartmodal" id="convmodal">
+    <div class="chartbox">
+      <div class="charthead"><span>Convert</span><div class="chartbtns"><button class="fbtn" id="convClose">✕</button></div></div>
+      <div class="newmenu" id="convlist" style="grid-template-columns:1fr">
+        <button class="fbtn" id="cv2word">📝 PDF → Word (.docx) — editable text</button>
+        <button class="fbtn" id="cv2text">📄 PDF → Text (.txt)</button>
+        <button class="fbtn" id="cv2imgs">📤 PDF → Images (zip)</button>
+        <button class="fbtn" id="cvImg2pdf">🖼 Images → PDF</button>
+      </div>
+      <div style="padding:0 10px 10px;font-size:12px;opacity:.7">Scanned PDF (no real text)? Use OCR first, then convert.</div>
     </div>
   </div>
 
