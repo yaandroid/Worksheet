@@ -56,3 +56,57 @@ body{overflow-x:hidden}
 .fbtn input[type=color]{width:22px;height:22px;border:0;background:none;padding:0}
 .fbtn.on{background:var(--saffron);color:#2a1d00}
 .fsel{background:#11161f;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px}
+
+/* ============================================================
+   Standard-app UI polish — single-row scrolling toolbars,
+   bigger tap targets, cleaner spacing. (overrides above)
+   ============================================================ */
+/* Toolbars: one tidy row that scrolls sideways instead of wrapping into a cramped block */
+.topbar,.fmtbar.show,.pdftools.show,.texttools.show{
+  flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;row-gap:0;scrollbar-width:none;
+}
+.topbar::-webkit-scrollbar,.fmtbar::-webkit-scrollbar,.pdftools::-webkit-scrollbar,.texttools::-webkit-scrollbar{display:none;height:0}
+.topbar>*,.fmtbar>*,.pdftools>*,.texttools>*{flex:0 0 auto}
+.topbar{gap:7px;padding:9px 12px;box-shadow:0 1px 0 rgba(0,0,0,.25)}
+
+/* Buttons: consistent pills, comfortable 40px tap targets */
+.btn,.fbtn{
+  min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  padding:0 14px!important;font-size:13px!important;line-height:1;border-radius:10px;
+  background:#263450;border:1px solid #33456a;color:#fff;transition:background .12s,transform .05s;
+}
+.btn:active,.fbtn:active{transform:scale(.96)}
+.btn.accent,.fbtn.accent{background:var(--green);border-color:var(--green);color:#fff;font-weight:600}
+.btn.on,.fbtn.on,.ptool.on,.ctype.on,.olang.on{background:var(--saffron);border-color:var(--saffron);color:#2a1d00;font-weight:600}
+.fbtn input[type=color]{width:24px;height:24px;border:0;background:none;padding:0;border-radius:5px}
+
+/* Brand + document name header */
+.brand{font-size:15px;font-weight:700;letter-spacing:.2px;margin-right:4px;gap:7px}
+.brand .logo{width:24px;height:24px;border-radius:7px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+#docTitle{color:#c9d4e8;font-size:12.5px;font-weight:500;max-width:36vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:2px}
+
+/* Contextual toolbars: a touch more breathing room + a soft divider under them */
+.fmtbar,.pdftools,.texttools{gap:7px;padding:8px 12px;box-shadow:inset 0 -1px 0 var(--line)}
+.fsel{min-height:40px;border-radius:10px;padding:0 10px;background:#11161f}
+
+/* Formula bar: crisper */
+.formulabar{padding:7px 12px;gap:9px}
+.cellref{border-radius:9px;min-height:40px}
+#finput{border-radius:9px;min-height:40px;font-size:14.5px}
+
+/* Status bar: calmer */
+.statusbar{padding:6px 14px;font-size:11px}
+.sheettab{border-radius:9px 9px 0 0;padding:7px 14px;font-size:12px}
+
+/* Modals: softer, more standard sheet feel */
+.chartbox{border-radius:16px;box-shadow:0 18px 60px rgba(0,0,0,.55)}
+.charthead{padding:14px 16px;font-size:15px}
+.newcard{border-radius:14px;padding:18px 10px}
+.newcard:active{transform:scale(.97)}
+
+@media(max-width:700px){
+  .btn,.fbtn,.fsel,.cellref,#finput{min-height:38px}
+  .topbar{padding:8px 11px}
+  #docTitle{max-width:30vw}
+}

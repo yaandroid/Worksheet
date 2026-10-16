@@ -102,6 +102,7 @@
     const pt = document.getElementById('pdftools'); if (pt) pt.classList.remove('show');
     const tt = document.getElementById('texttools'); if (tt) tt.classList.remove('show');
     const wt = document.getElementById('wordtools'); if (wt) wt.classList.remove('show');
+    const tabsEl = document.getElementById('tabs'); if (tabsEl) tabsEl.style.display = 'none';   // sheet tabs only in sheet view
     if (editMode) { editMode = false; const eb = document.getElementById('pdfEdit'); if (eb) eb.classList.remove('on'); }
     pdfview.innerHTML = ''; htmlview.src = 'about:blank';
     document.getElementById('gallery').classList.remove('show');
@@ -109,7 +110,7 @@
     hideLoupe();
   }
   let currentView = 'sheet', textFontSize = 15, htmlZoom = 1;
-  function showSheet() { hideAll(); currentView = 'sheet'; canvas.style.display = 'block'; fbar.style.display = 'flex'; resize(); draw(); }
+  function showSheet() { hideAll(); currentView = 'sheet'; canvas.style.display = 'block'; fbar.style.display = 'flex'; const tabsEl = document.getElementById('tabs'); if (tabsEl) tabsEl.style.display = 'flex'; resize(); draw(); }
   function showLoading(on) { loading.classList.toggle('show', on); }
   function setStatus(s) { document.getElementById('status').textContent = s + ' · Developed by Sandeep Kushwah'; }
 
@@ -1141,10 +1142,12 @@
   }
 
   // ---------- entry ----------
+  function setDocTitle(name) { const el = document.getElementById('docTitle'); if (el) el.textContent = name ? ('· ' + name) : ''; }
   window.BrahmOpen = function (b64, name) {
     try {
       const bin = atob(b64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const n = (name || '').toLowerCase();
+      setDocTitle(name);
       if (n.endsWith('.pdf')) { clearImages(); openPdf(bytes, name); }
       else if (n.endsWith('.xlsx') || n.endsWith('.xls') || n.endsWith('.xlsm')) { showSheet(); loadWorkbook(bytes, name); extractImages(bytes); }
       else if (n.endsWith('.csv') || n.endsWith('.tsv')) { clearImages(); loadCsv(new TextDecoder().decode(bytes), name); }
@@ -1160,7 +1163,7 @@
   // ---------- buttons ----------
   document.getElementById('btnOpen').onclick = () => { if (AB && AB.pickFile) AB.pickFile(); };
   // ---------- New: blank + templates ----------
-  function openBook(sheets, status) { clearImages(); book = sheets; active = 0; undoStack.length = 0; renderTabs(); showSheet(); select(0, 0); setStatus(status); }
+  function openBook(sheets, status) { clearImages(); book = sheets; active = 0; undoStack.length = 0; renderTabs(); showSheet(); select(0, 0); setDocTitle(''); setStatus(status); }
   function sheetFromAOA(name, aoa) { const s = new E.Sheet(name); aoa.forEach((row, r) => row.forEach((v, c) => { if (v !== '' && v != null) s.set(r, c, String(v)); })); return s; }
   const TPL_SHEET = {
     invoice: () => [["Brahm InnerBrain Technologies Pvt. Ltd."], ["TAX INVOICE"], ["Invoice No:", "", "Date:", ""], ["Bill To:", ""], [""], ["Item", "Qty", "Rate", "Amount"], ["", "", "", "=B7*C7"], ["", "", "", "=B8*C8"], ["", "", "", "=B9*C9"], [""], ["", "", "Subtotal", "=SUM(D7:D9)"], ["", "", "GST 18%", "=D11*0.18"], ["", "", "Total", "=D11+D12"]],
