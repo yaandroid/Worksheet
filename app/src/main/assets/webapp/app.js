@@ -346,6 +346,8 @@
     setStatus('PDF · ' + pdfDoc.numPages + ' pages · pinch zoom · ✏️ Edit to annotate');
     showLoading(false);
   }
+  // pdf-lib load options — ignoreEncryption lets owner/permission-encrypted PDFs (e.g. bank statements) load & save.
+  function loadOpts(pw) { const o = { ignoreEncryption: true }; if (pw) o.password = pw; return o; }
   function savePdfOut(nm, b64) {
     if (AB && AB.saveFile) AB.saveFile(nm, 'application/pdf', b64);
     else { const bin = atob(b64); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' })); a.download = nm; a.click(); }
@@ -362,7 +364,7 @@
     showLoading(true); setStatus('Encrypting…');
     try {
       const { PDFDocument } = PDFLib;
-      const doc = await PDFDocument.load(pdfBytes.slice(0), pdfPassword ? { password: pdfPassword } : {});
+      const doc = await PDFDocument.load(pdfBytes.slice(0), loadOpts(pdfPassword));
       doc.encrypt({ userPassword: pw, ownerPassword: pw });
       const out = await doc.saveAsBase64();
       const nm = pdfName.replace(/\.pdf$/i, '') + '-protected.pdf';
@@ -377,8 +379,8 @@
     try {
       const { PDFDocument } = PDFLib;
       let doc;
-      try { doc = await PDFDocument.load(pdfBytes.slice(0), pdfPassword ? { password: pdfPassword } : {}); }
-      catch (e1) { const entered = prompt('Enter the current password to remove it:'); if (!entered) { showLoading(false); return; } doc = await PDFDocument.load(pdfBytes.slice(0), { password: entered }); }
+      try { doc = await PDFDocument.load(pdfBytes.slice(0), loadOpts(pdfPassword)); }
+      catch (e1) { const entered = prompt('Enter the current password to remove it:'); if (!entered) { showLoading(false); return; } doc = await PDFDocument.load(pdfBytes.slice(0), loadOpts(entered)); }
       const out = await doc.saveAsBase64();
       const nm = pdfName.replace(/\.pdf$/i, '') + '-unlocked.pdf';
       savePdfOut(nm, out); setStatus('Saved ' + nm + ' — password removed');
@@ -685,7 +687,7 @@
     showLoading(true); setStatus('Saving edited PDF…');
     try {
       const { PDFDocument, rgb, StandardFonts, LineCapStyle } = PDFLib;
-      const doc = await PDFDocument.load(pdfBytes, pdfPassword ? { password: pdfPassword } : {});
+      const doc = await PDFDocument.load(pdfBytes, loadOpts(pdfPassword));
       const uni = await embedUniFont(doc);                       // Latin + Devanagari (Hindi)
       const font = uni || await doc.embedFont(StandardFonts.Helvetica);
       const fallbackFont = uni ? await doc.embedFont(StandardFonts.Helvetica) : font;
@@ -746,7 +748,7 @@
   }
   async function buildEditedPdf() {
     const { PDFDocument, degrees } = PDFLib;
-    const src = await PDFDocument.load(pdfBytes.slice(0), pdfPassword ? { password: pdfPassword } : {});
+    const src = await PDFDocument.load(pdfBytes.slice(0), loadOpts(pdfPassword));
     const out = await PDFDocument.create();
     const copied = await out.copyPages(src, pgOrder);
     copied.forEach((pg, i) => { const r = pgRot[pgOrder[i]] || 0; if (r) pg.setRotation(degrees((pg.getRotation().angle + r) % 360)); out.addPage(pg); });
@@ -769,10 +771,10 @@
     showLoading(true);
     try {
       const { PDFDocument } = PDFLib;
-      const cur = await PDFDocument.load(pdfBytes.slice(0), pdfPassword ? { password: pdfPassword } : {});
+      const cur = await PDFDocument.load(pdfBytes.slice(0), loadOpts(pdfPassword));
       if (op === 'merge') {
         setStatus('Merging…');
-        const other = await PDFDocument.load(b64ToBytes(b64));
+        const other = await PDFDocument.load(b64ToBytes(b64), loadOpts(""));
         const pages = await cur.copyPages(other, other.getPageIndices()); pages.forEach(p => cur.addPage(p));
         const out = await cur.saveAsBase64(); pagesmodal.classList.remove('show'); reopenPdfB64(out, pdfName.replace(/\.pdf$/i, '') + '-merged.pdf'); setStatus('Merged ' + name);
       } else if (op === 'image') {
