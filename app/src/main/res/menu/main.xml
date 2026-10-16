@@ -5,4 +5,5 @@
     <item android:id="@+id/action_choose_folder" android:title="Choose folder (show all files)" app:showAsAction="never"/>
     <item android:id="@+id/action_new_sheet" android:title="New sheet" app:showAsAction="never"/>
     <item android:id="@+id/action_all_files" android:title="Enable All files access" app:showAsAction="never"/>
+    <item android:id="@+id/action_lock" android:title="App lock (PIN / fingerprint)" app:showAsAction="never"/>
 </menu>

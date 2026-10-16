@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#16233F"
+    android:padding="28dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🔒 BRAHM Office"
+        android:textColor="#FFFFFF"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="6dp" />
+
+    <TextView
+        android:id="@+id/lockMsg"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Enter your PIN to unlock"
+        android:textColor="#C9D3E6"
+        android:textSize="14sp"
+        android:layout_marginBottom="22dp" />
+
+    <EditText
+        android:id="@+id/pinInput"
+        android:layout_width="220dp"
+        android:layout_height="wrap_content"
+        android:inputType="numberPassword"
+        android:imeOptions="actionDone"
+        android:gravity="center"
+        android:textColor="#16233F"
+        android:textSize="22sp"
+        android:letterSpacing="0.3"
+        android:background="#FFFFFF"
+        android:padding="12dp"
+        android:hint="••••"
+        android:maxLength="12" />
+
+    <Button
+        android:id="@+id/unlockBtn"
+        android:layout_width="220dp"
+        android:layout_height="wrap_content"
+        android:text="Unlock"
+        android:textColor="#2A1D00"
+        android:backgroundTint="#E8A33D"
+        android:layout_marginTop="16dp" />
+
+    <Button
+        android:id="@+id/bioBtn"
+        android:layout_width="220dp"
+        android:layout_height="wrap_content"
+        android:text="👆 Use fingerprint"
+        android:textColor="#FFFFFF"
+        android:backgroundTint="#2B579A"
+        android:layout_marginTop="10dp"
+        android:visibility="gone" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Developed by Sandeep Kushwah"
+        android:textColor="#6E7B92"
+        android:textSize="11sp"
+        android:layout_marginTop="28dp" />
+</LinearLayout>

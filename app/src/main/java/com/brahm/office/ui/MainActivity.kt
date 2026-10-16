@@ -115,7 +115,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); reload() }
+    override fun onResume() { super.onResume(); if (com.brahm.office.util.AppLock.guard(this)) return; reload() }
 
     // ---------- dashboard tile grid ----------
     private data class Tile(val icon: String, val label: String, val color: String, val action: String)
@@ -207,6 +207,7 @@ class MainActivity : AppCompatActivity() {
             R.id.action_choose_folder -> chooseFolder()
             R.id.action_new_sheet -> startActivity(Intent(this, DocActivity::class.java))
             R.id.action_all_files -> requestAllFilesAccess()
+            R.id.action_lock -> showLockSettings()
         }
         return super.onOptionsItemSelected(item)
     }
@@ -217,6 +218,54 @@ class MainActivity : AppCompatActivity() {
             sortMode = when (w) { 1 -> "NAME"; 2 -> "SIZE"; else -> "DATE" }; refresh()
         }.show()
     }
+
+    // ---------- app lock (PIN / fingerprint) ----------
+    private fun promptPin(title: String, onOk: (String) -> Unit) {
+        val input = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            hint = "4–12 digit PIN"
+        }
+        AlertDialog.Builder(this).setTitle(title).setView(input)
+            .setPositiveButton("OK") { _, _ ->
+                val p = input.text.toString()
+                if (p.length < 4) android.widget.Toast.makeText(this, "PIN must be at least 4 digits", android.widget.Toast.LENGTH_SHORT).show()
+                else onOk(p)
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+    private fun bioAvailable(): Boolean = androidx.biometric.BiometricManager.from(this)
+        .canAuthenticate(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+    private fun showLockSettings() {
+        val lock = com.brahm.office.util.AppLock
+        if (!lock.isEnabled(this)) {
+            promptPin("Set an app-lock PIN") { pin ->
+                promptPin("Confirm PIN") { again ->
+                    if (again == pin) {
+                        lock.setPin(this, pin)
+                        if (bioAvailable()) {
+                            AlertDialog.Builder(this).setTitle("Fingerprint unlock?")
+                                .setMessage("Also unlock BRAHM Office with your fingerprint?")
+                                .setPositiveButton("Yes") { _, _ -> lock.setBio(this, true); toastLock("App lock ON · PIN + fingerprint") }
+                                .setNegativeButton("No, PIN only") { _, _ -> lock.setBio(this, false); toastLock("App lock ON · PIN only") }.show()
+                        } else toastLock("App lock ON · PIN set")
+                    } else android.widget.Toast.makeText(this, "PINs didn't match", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+            return
+        }
+        val bioOn = lock.useBio(this)
+        val items = arrayOf("Change PIN", if (bioOn) "Turn OFF fingerprint" else "Turn ON fingerprint", "Remove app lock")
+        AlertDialog.Builder(this).setTitle("App lock").setItems(items) { _, w ->
+            when (w) {
+                0 -> promptPin("New PIN") { pin -> promptPin("Confirm new PIN") { again -> if (again == pin) { lock.setPin(this, pin); toastLock("PIN changed") } else android.widget.Toast.makeText(this, "PINs didn't match", android.widget.Toast.LENGTH_SHORT).show() } }
+                1 -> { if (!bioOn && !bioAvailable()) { android.widget.Toast.makeText(this, "No fingerprint set on this phone", android.widget.Toast.LENGTH_SHORT).show() } else { lock.setBio(this, !bioOn); toastLock(if (!bioOn) "Fingerprint ON" else "Fingerprint OFF") } }
+                2 -> AlertDialog.Builder(this).setTitle("Remove app lock?").setMessage("Anyone will be able to open the app.")
+                    .setPositiveButton("Remove") { _, _ -> lock.clear(this); toastLock("App lock removed") }
+                    .setNegativeButton("Keep", null).show()
+            }
+        }.show()
+    }
+    private fun toastLock(m: String) = android.widget.Toast.makeText(this, m, android.widget.Toast.LENGTH_SHORT).show()
 
     private fun pickFile() {
         val types = arrayOf("application/pdf","application/vnd.ms-excel",

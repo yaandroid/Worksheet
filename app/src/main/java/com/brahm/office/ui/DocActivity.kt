@@ -108,6 +108,8 @@ class DocActivity : AppCompatActivity() {
         handleIncoming(intent)
     }
 
+    override fun onResume() { super.onResume(); com.brahm.office.util.AppLock.guard(this) }
+
     private fun handleIncoming(intent: Intent?) {
         intent ?: return
         intent.getStringExtra("path")?.let { path ->

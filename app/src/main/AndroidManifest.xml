@@ -32,6 +32,14 @@
             </intent-filter>
         </activity>
 
+        <!-- App-lock screen (PIN / fingerprint) -->
+        <activity
+            android:name=".ui.LockActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.BrahmOffice" />
+
         <!-- Unified document surface (WebView engine): opens everything -->
         <activity
             android:name=".ui.DocActivity"
