@@ -615,7 +615,8 @@
   async function embedUniFont(doc) {
     try {
       const fb = fontBytes();
-      if (fb && window.fontkit && doc.registerFontkit) { doc.registerFontkit(window.fontkit); return await doc.embedFont(fb, { subset: true }); }
+      // subset:false — subsetting onto a LOADED pdf drops most glyphs (renders only a few letters); full embed is reliable.
+      if (fb && window.fontkit && doc.registerFontkit) { doc.registerFontkit(window.fontkit); return await doc.embedFont(fb, { subset: false }); }
     } catch (e) {}
     return null; // caller falls back to a standard font
   }
@@ -682,6 +683,7 @@
     const w = Math.max(right - x, measureTextW(size, val, fam)) + 2;
     const bg = sampleBg(meta, x, y, w, h);
     const a = { type: 'edittext', x, y, w, h, size, str: val, color: '#000000', bg, fontFamily: fam };
+    window.__A={x:a.x,y:a.y,w:a.w,h:a.h,size:a.size,bg:a.bg,fam:a.fontFamily,nspans:spans.length,run:cur.slice(0,40)};
     meta.annot.push(a); drawEditText(meta, a);
     // hide every span in the run from the text layer so nothing shows/searches twice
     for (const s of spans) { if (s.dataset.orig == null) s.dataset.orig = s.textContent; s.textContent = (s === spans[0]) ? val : ''; }
@@ -805,40 +807,39 @@
     showLoading(true); setStatus('Saving edited PDF…');
     try {
       const { PDFDocument, rgb, StandardFonts, LineCapStyle } = PDFLib;
-      const src = await PDFDocument.load(pdfBytes, loadOpts(pdfPassword));
-      const out = await PDFDocument.create();
-      const uni = await embedUniFont(out);
-      const font = uni || await out.embedFont(StandardFonts.Helvetica);
-      const fallbackFont = uni ? await out.embedFont(StandardFonts.Helvetica) : font;
+      const doc = await PDFDocument.load(pdfBytes, loadOpts(pdfPassword));
+      const uni = await embedUniFont(doc);                       // Latin + Devanagari (Hindi)
+      const font = uni || await doc.embedFont(StandardFonts.Helvetica);
+      const fallbackFont = uni ? await doc.embedFont(StandardFonts.Helvetica) : font;
       const drawTx = (pg, str, o) => { try { pg.drawText(str, { ...o, font }); } catch (e) { try { pg.drawText(str, { ...o, font: fallbackFont }); } catch (e2) {} } };
-      const metaFor = (i) => pageMeta.find(m => m.pageNum === i + 1);
-      for (let i = 0; i < src.getPageCount(); i++) {
-        const meta = metaFor(i);
-        const hasEdit = meta && meta.annot.some(a => a.type === 'edittext');
-        if (hasEdit) {
-          // Edited text page → flatten to an image so it looks EXACTLY like on screen (no leftover text)
-          const { dataUrl, ptW, ptH } = await renderFlatPng(meta);
-          const img = await out.embedPng(dataUrlToU8(dataUrl));
-          const pg = out.addPage([ptW, ptH]);
-          pg.drawImage(img, { x: 0, y: 0, width: ptW, height: ptH });
-        } else {
-          const [cp] = await out.copyPages(src, [i]); out.addPage(cp);
-          if (meta && meta.annot.length) {   // annotate-only page → keep it vector (text stays selectable)
-            const sz = cp.getSize(), pw = sz.width, ph = sz.height, fx = pw / meta.cssW, fy = ph / meta.cssH;
-            for (const a of meta.annot) {
-              const c = hexRgb(a.color);
-              if (a.type === 'text') { (a.str || '').split('\n').forEach((ln, j) => drawTx(cp, ln, { x: a.x * fx, y: ph - (a.y + a.size + j * a.size * 1.2) * fy, size: a.size * fy, color: rgb(c.r, c.g, c.b) })); }
-              else { const opt = { thickness: a.w * fx, color: rgb(c.r, c.g, c.b), opacity: a.type === 'hl' ? 0.32 : 1, lineCap: LineCapStyle.Round };
-                for (let j = 1; j < a.pts.length; j++) cp.drawLine({ start: { x: a.pts[j - 1].x * fx, y: ph - a.pts[j - 1].y * fy }, end: { x: a.pts[j].x * fx, y: ph - a.pts[j].y * fy }, ...opt }); }
-            }
+      const pages = doc.getPages();
+      for (const meta of pageMeta) {
+        const pg = pages[meta.pageNum - 1]; if (!pg) continue;
+        // Use the CropBox (fallback MediaBox) so coordinates match even when the page origin ≠ (0,0).
+        let box; try { box = pg.getCropBox(); } catch (e) { box = pg.getMediaBox(); }
+        const ox = box.x, oy = box.y, bw = box.width, bh = box.height;
+        const fx = bw / meta.cssW, fy = bh / meta.cssH;
+        const X = (cx) => ox + cx * fx;                 // CSS-x → PDF-x
+        const Y = (cy) => oy + bh - cy * fy;            // CSS-top-y → PDF-y (flip)
+        for (const a of meta.annot) {
+          const c = hexRgb(a.color);
+          if (a.type === 'edittext') {
+            const bgc = hexRgb(a.bg || '#ffffff'); const pad = a.size * 0.3;   // cover ascenders/descenders fully
+            pg.drawRectangle({ x: X(a.x - 2), y: Y(a.y + a.h + pad), width: (a.w + 4) * fx, height: (a.h + 2 * pad) * fy, color: rgb(bgc.r, bgc.g, bgc.b) });
+            if (a.str) drawTx(pg, a.str, { x: X(a.x), y: Y(a.y + a.size), size: a.size * fy, color: rgb(c.r, c.g, c.b) });
+          } else if (a.type === 'text') {
+            (a.str || '').split('\n').forEach((ln, j) => drawTx(pg, ln, { x: X(a.x), y: Y(a.y + a.size + j * a.size * 1.2), size: a.size * fy, color: rgb(c.r, c.g, c.b) }));
+          } else {
+            const opt = { thickness: a.w * fx, color: rgb(c.r, c.g, c.b), opacity: a.type === 'hl' ? 0.32 : 1, lineCap: LineCapStyle.Round };
+            for (let j = 1; j < a.pts.length; j++) pg.drawLine({ start: { x: X(a.pts[j - 1].x), y: Y(a.pts[j - 1].y) }, end: { x: X(a.pts[j].x), y: Y(a.pts[j].y) }, ...opt });
           }
         }
       }
-      const outB64 = await out.saveAsBase64();
+      const outB64 = await doc.saveAsBase64();
       const nm = pdfName.replace(/\.pdf$/i, '') + '-edited.pdf';
       if (AB && AB.saveFile) AB.saveFile(nm, 'application/pdf', outB64);
       else { const arr = b64ToBytes(outB64); const u = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' })); const a = document.createElement('a'); a.href = u; a.download = nm; a.click(); }
-      setStatus('Saved ' + nm);
+      setStatus('Saved ' + nm + ' — page stays editable text');
     } catch (e) { setStatus('Save failed: ' + e.message); }
     showLoading(false);
   };
@@ -968,6 +969,29 @@
     } catch (e) { setStatus('Convert failed: ' + e.message); }
     showLoading(false);
   };
+  document.getElementById('cv2wordOcr').onclick = async () => {
+    convmodal.classList.remove('show'); if (!pdfDoc) return;
+    if (!(AB && AB.ocr)) { setStatus('OCR convert needs the phone app'); return; }
+    if (typeof BrahmDocx === 'undefined' || typeof JSZip === 'undefined') { setStatus('Cannot convert'); return; }
+    showLoading(true);
+    try {
+      const root = document.createElement('div'); let any = false;
+      for (let n = 1; n <= pdfDoc.numPages; n++) {
+        setStatus('OCR page ' + n + '/' + pdfDoc.numPages + '…');
+        const png = await pageToPngB64(n);
+        const res = await ocrImage(png, 'hi');          // Devanagari+Latin → Hindi & English
+        if (res.text && res.text.trim()) {
+          res.text.split(/\r?\n/).forEach(line => { const t = line.trim(); if (t) { const p = document.createElement('p'); p.textContent = t; root.appendChild(p); any = true; } });
+          if (n < pdfDoc.numPages) root.appendChild(document.createElement('p'));
+        }
+      }
+      if (!any) { const p = document.createElement('p'); p.textContent = '(No text recognised.)'; root.appendChild(p); }
+      const b64 = await BrahmDocx.build(root, JSZip); const nm = pdfName.replace(/\.pdf$/i, '') + '-ocr.docx';
+      if (AB && AB.saveFile) AB.saveFile(nm, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b64);
+      setStatus('Saved ' + nm + ' — open to edit');
+    } catch (e) { setStatus('OCR convert failed: ' + e.message); }
+    showLoading(false);
+  };
   document.getElementById('cv2text').onclick = async () => {
     convmodal.classList.remove('show'); if (!pdfDoc) return; showLoading(true); setStatus('PDF → Text…');
     try {
@@ -1015,12 +1039,31 @@
     ocrModal.classList.add('show');
     runOcr('hi');
   };
+  let __ocrResolve = null;   // set when a conversion is awaiting an OCR result
   window.BrahmOcrResult = function (b64text, err) {
-    if (err) { document.getElementById('ocrtext').textContent = 'OCR error: ' + err; return; }
     let txt = '';
     try { txt = decodeURIComponent(escape(atob(b64text))); } catch (e) { try { txt = atob(b64text); } catch (_) {} }
+    if (__ocrResolve) { const r = __ocrResolve; __ocrResolve = null; r({ text: txt, err: err }); return; }
+    if (err) { document.getElementById('ocrtext').textContent = 'OCR error: ' + err; return; }
     document.getElementById('ocrtext').textContent = txt.trim() || '(no text found on this page)';
   };
+  // OCR one PDF page (render → ML Kit). Devanagari recognizer also reads Latin, so Hindi+English both come right.
+  function ocrImage(b64png, lang) {
+    return new Promise((resolve) => {
+      if (!(AB && AB.ocr)) { resolve({ text: '', err: 'needs app' }); return; }
+      __ocrResolve = resolve; try { AB.ocr(b64png, lang); } catch (e) { __ocrResolve = null; resolve({ text: '', err: 'ocr failed' }); }
+      setTimeout(() => { if (__ocrResolve === resolve) { __ocrResolve = null; resolve({ text: '', err: 'timeout' }); } }, 25000);
+    });
+  }
+  async function pageToPngB64(n) {
+    const page = await pdfDoc.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    let eff = Math.min(2.5, 2200 / base.width);          // crisp enough for OCR, capped
+    const vp = page.getViewport({ scale: eff });
+    const cv = document.createElement('canvas'); cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+    await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+    return cv.toDataURL('image/png').split(',')[1];
+  }
   document.querySelectorAll('.olang').forEach(b => b.onclick = () => runOcr(b.getAttribute('data-ol')));
   document.getElementById('ocrClose').onclick = () => ocrModal.classList.remove('show');
   ocrModal.addEventListener('click', (e) => { if (e.target === ocrModal) ocrModal.classList.remove('show'); });
