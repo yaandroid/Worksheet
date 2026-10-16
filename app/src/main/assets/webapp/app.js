@@ -643,19 +643,48 @@
     g.restore();
   }
   // Tapping a text span in "Edit text" mode replaces that run of real PDF text.
+  // Many PDFs store one line/field as MANY tiny spans (per word or per glyph). Editing just one
+  // leaves the rest of the original showing through → the "spaced-out characters" mess. So we
+  // group the whole contiguous run the user tapped (same line, small gaps), edit it as one unit,
+  // cover it with a single whiteout and redraw clean text.
+  function spanGeo(s) { const size = parseFloat(s.style.fontSize) || 12; return { s, x: s.offsetLeft, y: s.offsetTop, w: s.offsetWidth, size, mid: s.offsetTop + size / 2 }; }
+  function lineRun(span) {
+    const layer = span.closest('.textlayer'); if (!layer) return [span];
+    const all = Array.from(layer.querySelectorAll('span')).map(spanGeo);
+    const t = spanGeo(span);
+    // same line = vertical centres close (within 60% of font size)
+    const line = all.filter(g => Math.abs(g.mid - t.mid) <= Math.max(t.size, g.size) * 0.6).sort((a, b) => a.x - b.x);
+    const idx = line.findIndex(g => g.s === span); if (idx < 0) return [span];
+    const run = [line[idx]];
+    const near = (a, b) => (b.x - (a.x + a.w)) <= a.size * 1.3;   // small gap = same field; big gap = next column
+    for (let i = idx - 1; i >= 0; i--) { if (near(line[i], run[0])) run.unshift(line[i]); else break; }
+    for (let i = idx + 1; i < line.length; i++) { const last = run[run.length - 1]; if (near(last, line[i])) run.push(line[i]); else break; }
+    return run.map(g => g.s);
+  }
+  function runText(spans) { // reconstruct words: one space only where there's a real gap
+    let out = ''; let prev = null;
+    for (const s of spans) { const g = spanGeo(s); const txt = (s.dataset.orig != null ? s.dataset.orig : s.textContent) || '';
+      if (prev) { const gap = g.x - (prev.x + prev.w); const needSp = gap > g.size * 0.28 && !/\s$/.test(out) && !/^\s/.test(txt); if (needSp) out += ' '; }
+      out += txt; prev = g; }
+    return out.replace(/\s+/g, ' ').trim();
+  }
   function editTextSpan(span) {
     if (!editMode || editTool !== 'edittext') return;
     const wrap = span.closest('.pdfpage'); const meta = pageMeta.find(m => m.wrap === wrap); if (!meta) return;
-    const cur = (span.dataset.orig != null) ? span.dataset.orig : span.textContent;
+    const spans = lineRun(span);
+    const cur = runText(spans);
     const val = prompt('Edit this text:', cur);
     if (val === null) return;
-    const x = span.offsetLeft, y = span.offsetTop, size = parseFloat(span.style.fontSize) || 12, h = size * 1.2;
-    const fam = span.style.fontFamily || 'sans-serif';
-    const w = Math.max(span.offsetWidth, measureTextW(size, val, fam)) + 2;
+    // bounding box of the whole run
+    let x = Infinity, y = Infinity, right = -Infinity, bottom = -Infinity, size = 12, fam = span.style.fontFamily || 'sans-serif';
+    for (const s of spans) { const g = spanGeo(s); x = Math.min(x, g.x); y = Math.min(y, g.y); right = Math.max(right, g.x + g.w); bottom = Math.max(bottom, g.y + g.size * 1.2); size = Math.max(size, g.size); }
+    const h = bottom - y;
+    const w = Math.max(right - x, measureTextW(size, val, fam)) + 2;
     const bg = sampleBg(meta, x, y, w, h);
     const a = { type: 'edittext', x, y, w, h, size, str: val, color: '#000000', bg, fontFamily: fam };
     meta.annot.push(a); drawEditText(meta, a);
-    span.dataset.orig = cur; span.textContent = val; // keep search/text-layer in sync (span stays transparent)
+    // hide every span in the run from the text layer so nothing shows/searches twice
+    for (const s of spans) { if (s.dataset.orig == null) s.dataset.orig = s.textContent; s.textContent = (s === spans[0]) ? val : ''; }
     setStatus('Text changed · Save PDF to keep it');
   }
   function paintAnnots(meta) {
@@ -741,6 +770,34 @@
   };
   document.getElementById('pClear').onclick = () => { pageMeta.forEach(m => { if (m.annot.length) { m.annot = []; redrawPage(m); } }); setStatus('Annotations cleared'); };
   function hexRgb(h) { const n = parseInt(h.replace('#', ''), 16); return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 }; }
+  // Paint one annotation onto any 2D context at scale k (k = canvasPx per CSS px).
+  function paintAnnotOn(g, k, a) {
+    g.save(); g.setTransform(k, 0, 0, k, 0, 0);
+    if (a.type === 'edittext') {
+      g.globalAlpha = 1; g.fillStyle = a.bg || '#ffffff'; g.fillRect(a.x - 1, a.y - 1, a.w + 2, a.h + 2);
+      if (a.str) { g.fillStyle = a.color || '#000'; g.textBaseline = 'top'; g.font = a.size + 'px ' + (a.fontFamily || 'sans-serif'); g.fillText(a.str, a.x, a.y); }
+    } else if (a.type === 'text') {
+      g.globalAlpha = 1; g.fillStyle = a.color; g.textBaseline = 'top'; g.font = a.size + 'px sans-serif';
+      (a.str || '').split('\n').forEach((ln, i) => g.fillText(ln, a.x, a.y + i * a.size * 1.2));
+    } else {
+      g.globalAlpha = a.type === 'hl' ? 0.3 : 1; g.strokeStyle = a.color; g.lineWidth = a.w; g.lineCap = 'round'; g.lineJoin = 'round';
+      const p = a.pts || []; if (p.length) { g.beginPath(); g.moveTo(p[0].x, p[0].y); for (let i = 1; i < p.length; i++) g.lineTo(p[i].x, p[i].y); g.stroke(); }
+    }
+    g.restore();
+  }
+  // Flatten a page to a PNG (page bitmap + all edits baked in) — guaranteed WYSIWYG.
+  async function renderFlatPng(meta) {
+    const page = await pdfDoc.getPage(meta.pageNum);
+    let eff = meta.scale * 2;                                   // 2× the fit scale → crisp
+    let vp = page.getViewport({ scale: eff });
+    if (vp.width > MAX_CW * 1.6) { eff = eff * (MAX_CW * 1.6) / vp.width; vp = page.getViewport({ scale: eff }); }
+    const cv = document.createElement('canvas'); cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+    const g = cv.getContext('2d'); await page.render({ canvasContext: g, viewport: vp }).promise;
+    const k = cv.width / meta.cssW;
+    for (const a of meta.annot) paintAnnotOn(g, k, a);
+    return { dataUrl: cv.toDataURL('image/png'), ptW: vp.width / eff, ptH: vp.height / eff };
+  }
+  function dataUrlToU8(u) { const b = atob(u.split(',')[1]); const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
   document.getElementById('pSave').onclick = async () => {
     if (typeof PDFLib === 'undefined' || !pdfBytes) { setStatus('Editor unavailable'); return; }
     const hasAny = pageMeta.some(m => m.annot.length);
@@ -748,34 +805,39 @@
     showLoading(true); setStatus('Saving edited PDF…');
     try {
       const { PDFDocument, rgb, StandardFonts, LineCapStyle } = PDFLib;
-      const doc = await PDFDocument.load(pdfBytes, loadOpts(pdfPassword));
-      const uni = await embedUniFont(doc);                       // Latin + Devanagari (Hindi)
-      const font = uni || await doc.embedFont(StandardFonts.Helvetica);
-      const fallbackFont = uni ? await doc.embedFont(StandardFonts.Helvetica) : font;
+      const src = await PDFDocument.load(pdfBytes, loadOpts(pdfPassword));
+      const out = await PDFDocument.create();
+      const uni = await embedUniFont(out);
+      const font = uni || await out.embedFont(StandardFonts.Helvetica);
+      const fallbackFont = uni ? await out.embedFont(StandardFonts.Helvetica) : font;
       const drawTx = (pg, str, o) => { try { pg.drawText(str, { ...o, font }); } catch (e) { try { pg.drawText(str, { ...o, font: fallbackFont }); } catch (e2) {} } };
-      const pages = doc.getPages();
-      for (const meta of pageMeta) {
-        const pg = pages[meta.pageNum - 1]; if (!pg) continue;
-        const sz = pg.getSize(), pw = sz.width, ph = sz.height, fx = pw / meta.cssW, fy = ph / meta.cssH;
-        for (const a of meta.annot) {
-          const c = hexRgb(a.color);
-          if (a.type === 'edittext') {
-            const bgc = hexRgb(a.bg || '#ffffff');
-            pg.drawRectangle({ x: a.x * fx, y: ph - (a.y + a.h) * fy, width: a.w * fx, height: a.h * fy, color: rgb(bgc.r, bgc.g, bgc.b) });
-            if (a.str) drawTx(pg, a.str, { x: a.x * fx, y: ph - (a.y + a.size) * fy, size: a.size * fy, color: rgb(c.r, c.g, c.b) });
-          } else if (a.type === 'text') {
-            const lines = (a.str || '').split('\n');
-            lines.forEach((ln, i) => drawTx(pg, ln, { x: a.x * fx, y: ph - (a.y + a.size + i * a.size * 1.2) * fy, size: a.size * fy, color: rgb(c.r, c.g, c.b) }));
-          } else {
-            const opt = { thickness: a.w * fx, color: rgb(c.r, c.g, c.b), opacity: a.type === 'hl' ? 0.32 : 1, lineCap: LineCapStyle.Round };
-            for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1].x * fx, y: ph - a.pts[i - 1].y * fy }, end: { x: a.pts[i].x * fx, y: ph - a.pts[i].y * fy }, ...opt });
+      const metaFor = (i) => pageMeta.find(m => m.pageNum === i + 1);
+      for (let i = 0; i < src.getPageCount(); i++) {
+        const meta = metaFor(i);
+        const hasEdit = meta && meta.annot.some(a => a.type === 'edittext');
+        if (hasEdit) {
+          // Edited text page → flatten to an image so it looks EXACTLY like on screen (no leftover text)
+          const { dataUrl, ptW, ptH } = await renderFlatPng(meta);
+          const img = await out.embedPng(dataUrlToU8(dataUrl));
+          const pg = out.addPage([ptW, ptH]);
+          pg.drawImage(img, { x: 0, y: 0, width: ptW, height: ptH });
+        } else {
+          const [cp] = await out.copyPages(src, [i]); out.addPage(cp);
+          if (meta && meta.annot.length) {   // annotate-only page → keep it vector (text stays selectable)
+            const sz = cp.getSize(), pw = sz.width, ph = sz.height, fx = pw / meta.cssW, fy = ph / meta.cssH;
+            for (const a of meta.annot) {
+              const c = hexRgb(a.color);
+              if (a.type === 'text') { (a.str || '').split('\n').forEach((ln, j) => drawTx(cp, ln, { x: a.x * fx, y: ph - (a.y + a.size + j * a.size * 1.2) * fy, size: a.size * fy, color: rgb(c.r, c.g, c.b) })); }
+              else { const opt = { thickness: a.w * fx, color: rgb(c.r, c.g, c.b), opacity: a.type === 'hl' ? 0.32 : 1, lineCap: LineCapStyle.Round };
+                for (let j = 1; j < a.pts.length; j++) cp.drawLine({ start: { x: a.pts[j - 1].x * fx, y: ph - a.pts[j - 1].y * fy }, end: { x: a.pts[j].x * fx, y: ph - a.pts[j].y * fy }, ...opt }); }
+            }
           }
         }
       }
-      const out = await doc.saveAsBase64();
+      const outB64 = await out.saveAsBase64();
       const nm = pdfName.replace(/\.pdf$/i, '') + '-edited.pdf';
-      if (AB && AB.saveFile) AB.saveFile(nm, 'application/pdf', out);
-      else { const bin = atob(out); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); const u = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' })); const a = document.createElement('a'); a.href = u; a.download = nm; a.click(); }
+      if (AB && AB.saveFile) AB.saveFile(nm, 'application/pdf', outB64);
+      else { const arr = b64ToBytes(outB64); const u = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' })); const a = document.createElement('a'); a.href = u; a.download = nm; a.click(); }
       setStatus('Saved ' + nm);
     } catch (e) { setStatus('Save failed: ' + e.message); }
     showLoading(false);
