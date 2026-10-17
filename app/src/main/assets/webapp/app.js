@@ -684,11 +684,11 @@
     const layer = span.closest('.textlayer'); if (!layer) return [span];
     const all = Array.from(layer.querySelectorAll('span')).map(spanGeo);
     const t = spanGeo(span);
-    // same line = vertical centres close (within 60% of font size)
-    const line = all.filter(g => Math.abs(g.mid - t.mid) <= Math.max(t.size, g.size) * 0.6).sort((a, b) => a.x - b.x);
+    // same line = vertical centres very close AND similar font size (so a dense bill doesn't merge rows/headers)
+    const line = all.filter(g => Math.abs(g.mid - t.mid) <= t.size * 0.5 && g.size <= t.size * 1.4 && g.size >= t.size * 0.6).sort((a, b) => a.x - b.x);
     const idx = line.findIndex(g => g.s === span); if (idx < 0) return [span];
     const run = [line[idx]];
-    const near = (a, b) => (b.x - (a.x + a.w)) <= a.size * 1.3;   // small gap = same field; big gap = next column
+    const near = (a, b) => (b.x - (a.x + a.w)) <= t.size * 1.0;   // contiguous (within ~1 char); big gap = next column
     for (let i = idx - 1; i >= 0; i--) { if (near(line[i], run[0])) run.unshift(line[i]); else break; }
     for (let i = idx + 1; i < line.length; i++) { const last = run[run.length - 1]; if (near(last, line[i])) run.push(line[i]); else break; }
     return run.map(g => g.s);
@@ -707,14 +707,14 @@
     const cur = runText(spans);
     const val = prompt('Edit this text:', cur);
     if (val === null) return;
-    // bounding box of the whole run
-    let x = Infinity, y = Infinity, right = -Infinity, bottom = -Infinity, size = 12, fam = span.style.fontFamily || 'sans-serif';
-    for (const s of spans) { const g = spanGeo(s); x = Math.min(x, g.x); y = Math.min(y, g.y); right = Math.max(right, g.x + g.w); bottom = Math.max(bottom, g.y + g.size * 1.2); size = Math.max(size, g.size); }
-    const h = bottom - y;
+    // Font size = the TAPPED span's size (never the max — avoids a stray big span blowing it up).
+    const tap = spanGeo(span); const size = tap.size; const fam = span.style.fontFamily || 'sans-serif';
+    let x = Infinity, right = -Infinity;
+    for (const s of spans) { const g = spanGeo(s); x = Math.min(x, g.x); right = Math.max(right, g.x + g.w); }
+    const y = tap.y, h = size * 1.35;                 // one line only
     const w = Math.max(right - x, measureTextW(size, val, fam)) + 2;
     const bg = sampleBg(meta, x, y, w, h);
     const a = { type: 'edittext', x, y, w, h, size, str: val, color: '#000000', bg, fontFamily: fam };
-    window.__A={x:a.x,y:a.y,w:a.w,h:a.h,size:a.size,bg:a.bg,fam:a.fontFamily,nspans:spans.length,run:cur.slice(0,40)};
     meta.annot.push(a); drawEditText(meta, a);
     // hide every span in the run from the text layer so nothing shows/searches twice
     for (const s of spans) { if (s.dataset.orig == null) s.dataset.orig = s.textContent; s.textContent = (s === spans[0]) ? val : ''; }

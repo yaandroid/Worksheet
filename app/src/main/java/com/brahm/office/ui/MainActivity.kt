@@ -88,9 +88,9 @@ class MainActivity : AppCompatActivity() {
         adapter = FileAdapter(emptyList(), { open(it) }, { count -> updateSelBar(count) })
         list.adapter = adapter
 
+        list.isNestedScrollingEnabled = false
         val swipe = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipe)
         swipe.setColorSchemeColors(Color.parseColor("#E8A33D"), Color.parseColor("#1F9D63"), Color.parseColor("#2B579A"))
-        swipe.setOnChildScrollUpCallback { _, _ -> list.canScrollVertically(-1) }
         swipe.setOnRefreshListener { reload(); swipe.postDelayed({ swipe.isRefreshing = false }, 350) }
 
         findViewById<Button>(R.id.selShare).setOnClickListener { shareSelected() }
