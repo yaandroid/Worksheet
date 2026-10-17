@@ -651,21 +651,46 @@
     } catch (e) {}
     return null; // caller falls back to a standard font
   }
-  // background colour under a text box (text is usually darker than its background → pick the lightest sample)
-  function sampleBg(meta, x, y, w, h) {
+  function rgbHex(r, g, b) { return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join(''); }
+  // read one canvas pixel at CSS coords → [r,g,b] (or null if off-canvas)
+  function readPx(meta, cx, cy) {
     try {
-      const k = meta.pxRatio || meta.os; const g = meta.pageCanvas.getContext('2d');
-      const pts = [[x + w + 2, y + h * 0.5], [x - 3, y + h * 0.5], [x + w * 0.5, y - 3], [x + w * 0.5, y + h + 2]];
-      let best = null, bestSum = -1;
-      for (const p of pts) {
-        const sx = Math.round(p[0] * k), sy = Math.round(p[1] * k);
-        if (sx < 0 || sy < 0 || sx >= meta.pageCanvas.width || sy >= meta.pageCanvas.height) continue;
-        const d = g.getImageData(sx, sy, 1, 1).data; const sum = d[0] + d[1] + d[2];
-        if (sum > bestSum) { bestSum = sum; best = d; }
-      }
-      if (best) return '#' + [best[0], best[1], best[2]].map(v => v.toString(16).padStart(2, '0')).join('');
-    } catch (e) {}
+      const k = meta.pxRatio || meta.os || 1; const g = meta.pageCanvas.getContext('2d');
+      const sx = Math.round(cx * k), sy = Math.round(cy * k);
+      if (sx < 0 || sy < 0 || sx >= meta.pageCanvas.width || sy >= meta.pageCanvas.height) return null;
+      const d = g.getImageData(sx, sy, 1, 1).data; return [d[0], d[1], d[2]];
+    } catch (e) { return null; }
+  }
+  // background colour around a text box = the MOST COMMON colour in a ring around it
+  // (works whether the text is dark-on-light or light-on-dark, e.g. white text on a coloured card)
+  function sampleBg(meta, x, y, w, h) {
+    const mx = Math.max(3, w * 0.12);
+    const pts = [[x + w * 0.2, y - 3], [x + w * 0.5, y - 3], [x + w * 0.8, y - 3],
+                 [x + w * 0.2, y + h + 3], [x + w * 0.5, y + h + 3], [x + w * 0.8, y + h + 3],
+                 [x - mx, y + h * 0.5], [x + w + mx, y + h * 0.5],
+                 [x - mx, y + h * 0.25], [x + w + mx, y + h * 0.75]];
+    const bins = {}; let best = null, bestN = 0;
+    for (const p of pts) {
+      const c = readPx(meta, p[0], p[1]); if (!c) continue;
+      const key = (c[0] >> 4) + ',' + (c[1] >> 4) + ',' + (c[2] >> 4);
+      const b = bins[key] || (bins[key] = { n: 0, s: [0, 0, 0] });
+      b.n++; b.s[0] += c[0]; b.s[1] += c[1]; b.s[2] += c[2];
+      if (b.n > bestN) { bestN = b.n; best = b; }
+    }
+    if (best) { const n = best.n; return rgbHex(best.s[0] / n, best.s[1] / n, best.s[2] / n); }
     return '#ffffff';
+  }
+  // ink (foreground) colour of the original text = the pixel inside the box FARTHEST from the background
+  function sampleFg(meta, x, y, w, h, bgHex) {
+    const bg = hexRgb(bgHex); const br = bg.r * 255, bgg = bg.g * 255, bb = bg.b * 255;
+    let best = null, bestD = -1; const cols = 16, rows = 6;
+    for (let i = 1; i < cols; i++) for (let j = 1; j < rows; j++) {
+      const c = readPx(meta, x + w * i / cols, y + h * j / rows); if (!c) continue;
+      const d = (c[0] - br) * (c[0] - br) + (c[1] - bgg) * (c[1] - bgg) + (c[2] - bb) * (c[2] - bb);
+      if (d > bestD) { bestD = d; best = c; }
+    }
+    if (best && bestD > 1600) return rgbHex(best[0], best[1], best[2]); // clear contrast with bg = real ink
+    return '#000000';
   }
   function measureTextW(size, str, fam) { const g = document.createElement('canvas').getContext('2d'); g.font = size + 'px ' + (fam || 'sans-serif'); return g.measureText(str || '').width; }
   function drawEditText(meta, a) {
@@ -702,23 +727,43 @@
   }
   function editTextSpan(span) {
     if (!editMode || editTool !== 'edittext') return;
-    const wrap = span.closest('.pdfpage'); const meta = pageMeta.find(m => m.wrap === wrap); if (!meta) return;
-    const spans = lineRun(span);
-    const cur = runText(spans);
-    const val = prompt('Edit this text:', cur);
-    if (val === null) return;
-    // Font size = the TAPPED span's size (never the max — avoids a stray big span blowing it up).
-    const tap = spanGeo(span); const size = tap.size; const fam = span.style.fontFamily || 'sans-serif';
-    let x = Infinity, right = -Infinity;
-    for (const s of spans) { const g = spanGeo(s); x = Math.min(x, g.x); right = Math.max(right, g.x + g.w); }
-    const y = tap.y, h = size * 1.35;                 // one line only
-    const w = Math.max(right - x, measureTextW(size, val, fam)) + 2;
-    const bg = sampleBg(meta, x, y, w, h);
-    const a = { type: 'edittext', x, y, w, h, size, str: val, color: '#000000', bg, fontFamily: fam };
-    meta.annot.push(a); drawEditText(meta, a);
-    // hide every span in the run from the text layer so nothing shows/searches twice
-    for (const s of spans) { if (s.dataset.orig == null) s.dataset.orig = s.textContent; s.textContent = (s === spans[0]) ? val : ''; }
-    setStatus('Text changed · Save PDF to keep it');
+    try {
+      const wrap = span.closest('.pdfpage'); const meta = pageMeta.find(m => m.wrap === wrap); if (!meta) return;
+      const spans = lineRun(span);
+      const cur = runText(spans);
+      const val = prompt('Edit this text:', cur);
+      if (val === null) return;
+      // Font size starts at the TAPPED span's size (never the max — avoids a stray big span blowing it up).
+      const tap = spanGeo(span); let size = tap.size; const fam = span.style.fontFamily || 'sans-serif';
+      let x = Infinity, right = -Infinity;
+      for (const s of spans) { const g = spanGeo(s); x = Math.min(x, g.x); right = Math.max(right, g.x + g.w); }
+      const origW = right - x;
+      const y = tap.y, h = size * 1.35;                 // one line only
+      // How much horizontal room is there? Stop at the next text on this line that ISN'T part of the run
+      // (the next word/column), otherwise the page's right content edge. Keeps edits inside the line.
+      const layer = span.closest('.textlayer'); let nextX = Infinity;
+      if (layer) {
+        const run = new Set(spans); const midY = y + tap.size / 2;
+        for (const s of layer.querySelectorAll('span')) {
+          if (run.has(s)) continue; const g = spanGeo(s);
+          if (Math.abs((g.y + g.size / 2) - midY) <= tap.size * 0.6 && g.x >= right - 1) nextX = Math.min(nextX, g.x);
+        }
+      }
+      const rightEdge = nextX < Infinity ? nextX - 3 : meta.cssW - 6;
+      const avail = Math.max(origW, rightEdge - x);
+      // Shrink the font so the new text fits the available slot — never grow it past the original size.
+      let tw = measureTextW(size, val, fam);
+      if (tw > avail) { size = Math.max(size * avail / tw, tap.size * 0.45); tw = measureTextW(size, val, fam); }
+      const w = Math.max(origW, tw) + 2;
+      // sample the ORIGINAL pixels (before we white them out) for background + ink colour
+      const bg = sampleBg(meta, x, y, origW, h);
+      const color = sampleFg(meta, x, y, origW, h, bg);
+      const a = { type: 'edittext', x, y, w, h, size, str: val, color, bg, fontFamily: fam };
+      meta.annot.push(a); drawEditText(meta, a);
+      // hide every span in the run from the text layer so nothing shows/searches twice
+      for (const s of spans) { if (s.dataset.orig == null) s.dataset.orig = s.textContent; s.textContent = (s === spans[0]) ? val : ''; }
+      setStatus('Text changed · Save PDF to keep it');
+    } catch (e) { setStatus('Edit failed: ' + (e && e.message || e)); }
   }
   function paintAnnots(meta) {
     for (const a of meta.annot) {
