@@ -749,12 +749,15 @@
           if (Math.abs((g.y + g.size / 2) - midY) <= tap.size * 0.6 && g.x >= right - 1) nextX = Math.min(nextX, g.x);
         }
       }
-      const rightEdge = nextX < Infinity ? nextX - 3 : meta.cssW - 6;
+      // Bound the edit to the original footprint: expand only into the gap up to the NEXT word on this
+      // line — never to the page edge. A line's last/only word (e.g. a card heading) stays within its
+      // OWN width, so edited text can never spill outside the line or past a coloured card's border.
+      const rightEdge = nextX < Infinity ? nextX - 3 : x + origW;
       const avail = Math.max(origW, rightEdge - x);
-      // Shrink the font so the new text fits the available slot — never grow it past the original size.
+      // Shrink the font so the new text fits that slot — never grow it past the original size.
       let tw = measureTextW(size, val, fam);
-      if (tw > avail) { size = Math.max(size * avail / tw, tap.size * 0.45); tw = measureTextW(size, val, fam); }
-      const w = Math.max(origW, tw) + 2;
+      if (tw > avail) { size = Math.max(size * avail / tw, 5); tw = measureTextW(size, val, fam); }
+      const w = Math.min(Math.max(origW, tw), avail) + 2;
       // sample the ORIGINAL pixels (before we white them out) for background + ink colour
       const bg = sampleBg(meta, x, y, origW, h);
       const color = sampleFg(meta, x, y, origW, h, bg);
