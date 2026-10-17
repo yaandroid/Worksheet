@@ -643,6 +643,17 @@
     if (!window.BRAHM_FONT_B64) return null;
     try { const bin = atob(window.BRAHM_FONT_B64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; } catch (e) { return null; }
   }
+  // Register that SAME embedded font as a web/canvas font ('BrahmEdit'), so the on-screen edit preview is
+  // measured AND drawn in the exact font the saved PDF will use. (Measuring in 'sans-serif' — which is
+  // narrower than the embedded Noto — made edited text fit on screen but overflow the line once saved.)
+  var EDIT_FONT = 'sans-serif';
+  (function registerEditFont() {
+    try {
+      if (!window.BRAHM_FONT_B64 || typeof FontFace === 'undefined') return;
+      const ff = new FontFace('BrahmEdit', 'url(data:font/ttf;base64,' + window.BRAHM_FONT_B64 + ')');
+      ff.load().then(function (f) { try { document.fonts.add(f); EDIT_FONT = "'BrahmEdit', sans-serif"; } catch (e) {} }).catch(function () {});
+    } catch (e) {}
+  })();
   async function embedUniFont(doc) {
     try {
       const fb = fontBytes();
@@ -734,7 +745,8 @@
       const val = prompt('Edit this text:', cur);
       if (val === null) return;
       // Font size starts at the TAPPED span's size (never the max — avoids a stray big span blowing it up).
-      const tap = spanGeo(span); let size = tap.size; const fam = span.style.fontFamily || 'sans-serif';
+      // Measure/draw in the SAME font the save uses (EDIT_FONT = embedded Noto) so the fit is accurate.
+      const tap = spanGeo(span); let size = tap.size; const fam = EDIT_FONT;
       let x = Infinity, right = -Infinity;
       for (const s of spans) { const g = spanGeo(s); x = Math.min(x, g.x); right = Math.max(right, g.x + g.w); }
       const origW = right - x;
@@ -755,13 +767,19 @@
       const rightEdge = nextX < Infinity ? nextX - 3 : x + origW;
       const avail = Math.max(origW, rightEdge - x);
       // Shrink the font so the new text fits that slot — never grow it past the original size.
+      // Safety margin so the text never kisses the boundary. If the embedded font is loaded we measure in
+      // it directly (accurate → small margin); if it hasn't loaded yet, sans-serif under-measures vs the
+      // save font, so leave a bigger margin.
+      const fit = avail * (fam.indexOf('BrahmEdit') >= 0 ? 0.97 : 0.90);
       let tw = measureTextW(size, val, fam);
-      if (tw > avail) { size = Math.max(size * avail / tw, 5); tw = measureTextW(size, val, fam); }
+      if (tw > fit) { size = Math.max(size * fit / tw, 5); tw = measureTextW(size, val, fam); }
       const w = Math.min(Math.max(origW, tw), avail) + 2;
       // sample the ORIGINAL pixels (before we white them out) for background + ink colour
       const bg = sampleBg(meta, x, y, origW, h);
       const color = sampleFg(meta, x, y, origW, h, bg);
-      const a = { type: 'edittext', x, y, w, h, size, str: val, color, bg, fontFamily: fam };
+      // availCss = the true horizontal room (CSS px) — pSave re-fits the text to this using the REAL
+      // embedded-font metrics, because canvas under-measures the save font and let text overflow.
+      const a = { type: 'edittext', x, y, w, h, size, str: val, color, bg, fontFamily: fam, availCss: avail };
       meta.annot.push(a); drawEditText(meta, a);
       // hide every span in the run from the text layer so nothing shows/searches twice
       for (const s of spans) { if (s.dataset.orig == null) s.dataset.orig = s.textContent; s.textContent = (s === spans[0]) ? val : ''; }
@@ -905,7 +923,23 @@
           if (a.type === 'edittext') {
             const bgc = hexRgb(a.bg || '#ffffff'); const pad = a.size * 0.3;   // cover ascenders/descenders fully
             pg.drawRectangle({ x: X(a.x - 2), y: Y(a.y + a.h + pad), width: (a.w + 4) * fx, height: (a.h + 2 * pad) * fy, color: rgb(bgc.r, bgc.g, bgc.b) });
-            if (a.str) drawTx(pg, a.str, { x: X(a.x), y: Y(a.y + a.size), size: a.size * fy, color: rgb(c.r, c.g, c.b) });
+            if (a.str) {
+              // Authoritative fit so the text can NEVER overflow the line once saved. Latin/Hinglish text
+              // (the common case) is drawn with Helvetica — its metrics are exact and the viewer renders it
+              // exactly that wide, so the shrink is precise. Devanagari needs the embedded Noto, whose
+              // declared widths render a bit narrower than drawn, so it gets a safety fudge.
+              const isLatin = !/[^\u0000-ɏ‐-⁄]/.test(a.str);
+              let drawFont = (isLatin && fallbackFont) ? fallbackFont : font;
+              let fsize = a.size * fy;
+              const availPdf = (a.availCss != null ? a.availCss : a.w) * fx;
+              let realW = 0;
+              try { realW = drawFont.widthOfTextAtSize(a.str, fsize); }
+              catch (e) { drawFont = font; try { realW = drawFont.widthOfTextAtSize(a.str, fsize); } catch (e2) {} }
+              const fudge = (drawFont === font && uni) ? 1.14 : 1.02;
+              if (realW > 0 && realW * fudge > availPdf) fsize = fsize * (availPdf / (realW * fudge));
+              try { pg.drawText(a.str, { x: X(a.x), y: Y(a.y + fsize / fy), size: fsize, font: drawFont, color: rgb(c.r, c.g, c.b) }); }
+              catch (e) { drawTx(pg, a.str, { x: X(a.x), y: Y(a.y + fsize / fy), size: fsize, color: rgb(c.r, c.g, c.b) }); }
+            }
           } else if (a.type === 'text') {
             (a.str || '').split('\n').forEach((ln, j) => drawTx(pg, ln, { x: X(a.x), y: Y(a.y + a.size + j * a.size * 1.2), size: a.size * fy, color: rgb(c.r, c.g, c.b) }));
           } else {
