@@ -113,3 +113,8 @@ body{overflow-x:hidden}
   .topbar{padding:8px 11px}
   #docTitle{max-width:30vw}
 }
+
+/* ---- Bottom bar: sheet tabs get the full width on their own row; one thin credit line below ---- */
+.statusbar{flex-direction:column;align-items:stretch;justify-content:flex-start;padding:0;gap:0}
+.statusbar #tabs{width:100%;padding:5px 8px 0 8px}
+.statusbar #status{width:100%;text-align:center;padding:3px 10px 5px 10px;font-size:10px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

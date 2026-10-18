@@ -324,8 +324,8 @@
 
   canvas.addEventListener('touchend', (e) => {
     clearTimeout(gLong);
-    if (gColResize) { setStatus('Column ' + E.colName(gColResize.c) + ' width ' + Math.round(cwOf(gColResize.c)) + 'px · double-tap header to auto-fit'); gColResize = null; return; }
-    if (gRowResize) { setStatus('Row ' + (gRowResize.r + 1) + ' height ' + Math.round(rhOf(gRowResize.r)) + 'px'); gRowResize = null; return; }
+    if (gColResize) { gColResize = null; return; }
+    if (gRowResize) { gRowResize = null; return; }
     if (gFillDrag) { gFillDrag = false; doFill(); return; }
     if (gRangeDrag) { gRangeDrag = false; const b = selBox(); const n = (b.r2 - b.r1 + 1) * (b.c2 - b.c1 + 1); let sum = 0, cnt = 0;
       for (let r = b.r1; r <= b.r2; r++) for (let c = b.c1; c <= b.c2; c++) { const v = sheet().value(r, c); if (v && v.t === 'num') { sum += v.n; cnt++; } }
