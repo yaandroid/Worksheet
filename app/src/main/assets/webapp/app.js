@@ -705,6 +705,18 @@
     return '#000000';
   }
   function measureTextW(size, str, fam) { const g = document.createElement('canvas').getContext('2d'); g.font = size + 'px ' + (fam || 'sans-serif'); return g.measureText(str || '').width; }
+  // Render a text string to a transparent PNG using the browser's (correct) text shaping — used for
+  // Devanagari/Hindi edited text, which pdf-lib cannot shape (conjuncts/matras would break on save).
+  function textToInkPng(str, sizeCss, color, fam) {
+    const scale = 3, pad = 2, family = fam || "'BrahmEdit', sans-serif";
+    const meas = document.createElement('canvas').getContext('2d'); meas.font = sizeCss + 'px ' + family;
+    const w = Math.ceil(meas.measureText(str).width) + pad * 2, h = Math.ceil(sizeCss * 1.5) + pad * 2;
+    const cv = document.createElement('canvas'); cv.width = Math.max(1, w * scale); cv.height = Math.max(1, h * scale);
+    const g = cv.getContext('2d'); g.scale(scale, scale);
+    g.fillStyle = color || '#000'; g.textBaseline = 'top'; g.font = sizeCss + 'px ' + family;
+    g.fillText(str, pad, pad);
+    return { dataUrl: cv.toDataURL('image/png'), wCss: w, hCss: h };
+  }
   function drawEditText(meta, a) {
     const k = meta.pxRatio || meta.os; const g = meta.pageCanvas.getContext('2d'); g.save(); g.setTransform(k, 0, 0, k, 0, 0);
     g.globalAlpha = 1; g.fillStyle = a.bg || '#ffffff'; g.fillRect(a.x - 1, a.y - 1, a.w + 2, a.h + 2);
@@ -979,11 +991,19 @@
           if (a.type === 'edittext') {
             const bgc = hexRgb(a.bg || '#ffffff'); const pad = a.size * 0.3;   // cover ascenders/descenders fully
             pg.drawRectangle({ x: X(a.x - 2), y: Y(a.y + a.h + pad), width: (a.w + 4) * fx, height: (a.h + 2 * pad) * fy, color: rgb(bgc.r, bgc.g, bgc.b) });
-            if (a.str) {
-              // Authoritative fit so the text can NEVER overflow the line once saved. Latin/Hinglish text
-              // (the common case) is drawn with Helvetica — its metrics are exact and the viewer renders it
-              // exactly that wide, so the shrink is precise. Devanagari needs the embedded Noto, whose
-              // declared widths render a bit narrower than drawn, so it gets a safety fudge.
+            if (a.str && /[ऀ-ॿ]/.test(a.str)) {
+              // Devanagari (Hindi): pdf-lib can't shape conjuncts/matras, so stamp the correctly-shaped
+              // canvas text as a transparent image — it looks exactly like on screen.
+              try {
+                const png = textToInkPng(a.str, a.size, a.color, a.fontFamily);
+                let wPdf = png.wCss * fx, hPdf = png.hCss * fy;
+                const availPdfD = (a.availCss != null ? a.availCss : a.w) * fx;
+                if (wPdf > availPdfD && wPdf > 0) { const s = availPdfD / wPdf; wPdf *= s; hPdf *= s; }
+                const im = await doc.embedPng(dataUrlToU8(png.dataUrl));
+                pg.drawImage(im, { x: X(a.x), y: Y(a.y) - hPdf, width: wPdf, height: hPdf });
+              } catch (e) {}
+            } else if (a.str) {
+              // Latin/Hinglish: vector text via Helvetica (exact metrics so it never overflows), Noto fallback.
               const isLatin = !/[^\u0000-ɏ‐-⁄]/.test(a.str);
               let drawFont = (isLatin && fallbackFont) ? fallbackFont : font;
               let fsize = a.size * fy;
