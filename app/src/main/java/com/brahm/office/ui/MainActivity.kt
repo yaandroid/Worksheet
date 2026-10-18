@@ -98,6 +98,7 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.selShare).setOnClickListener { shareSelected() }
         findViewById<Button>(R.id.selStar).setOnClickListener { starSelected() }
+        findViewById<Button>(R.id.selSafe).setOnClickListener { saveToSafe() }
         findViewById<Button>(R.id.selCancel).setOnClickListener { adapter.clearSelection() }
 
         buildTiles()
@@ -195,6 +196,28 @@ class MainActivity : AppCompatActivity() {
             true
         }
         pm.show()
+    }
+    // Copy the selected files into a single "BRAHM Safe" folder (originals are kept — copy, never move).
+    private fun saveToSafe() {
+        val sel = adapter.selectedItems(); if (sel.isEmpty()) return
+        var dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS), "BRAHM Safe")
+        if (!dir.exists() && !dir.mkdirs()) { dir = java.io.File(getExternalFilesDir(null), "BRAHM Safe"); dir.mkdirs() }
+        var ok = 0; var fail = 0
+        for (it in sel) {
+            try {
+                val src = java.io.File(it.path); if (!src.exists()) { fail++; continue }
+                var dst = java.io.File(dir, src.name); var i = 1
+                while (dst.exists()) {
+                    val dot = src.name.lastIndexOf('.')
+                    val stem = if (dot > 0) src.name.substring(0, dot) else src.name
+                    val ext = if (dot > 0) src.name.substring(dot) else ""
+                    dst = java.io.File(dir, "$stem ($i)$ext"); i++
+                }
+                src.copyTo(dst, overwrite = false); ok++
+            } catch (e: Exception) { fail++ }
+        }
+        android.widget.Toast.makeText(this, "Copied $ok to ${dir.name} folder" + (if (fail > 0) " · $fail failed" else "") + "\n${dir.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
+        adapter.clearSelection(); reload()
     }
     private fun starSelected() {
         val sel = adapter.selectedItems(); if (sel.isEmpty()) return

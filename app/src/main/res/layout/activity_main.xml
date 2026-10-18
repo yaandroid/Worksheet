@@ -63,6 +63,14 @@
             android:textColor="@color/brahm_saffron"
             android:textStyle="bold" />
         <Button
+            android:id="@+id/selSafe"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📁 Safe"
+            android:textColor="@color/brahm_saffron"
+            android:textStyle="bold" />
+        <Button
             android:id="@+id/selShare"
             style="?android:attr/buttonBarButtonStyle"
             android:layout_width="wrap_content"

@@ -383,7 +383,7 @@
   let pdfBytes = null, pdfName = 'document.pdf', pageMeta = [], editMode = false, editTool = 'pen', pdfPassword = '';
   async function openPdf(bytes, name) {
     hideAll(); currentView = 'pdf'; pdfview.style.display = 'block'; zoombar.classList.add('show'); zoombar.classList.add('pdfmode'); showLoading(true);
-    pdfBytes = bytes.slice(0); pdfName = name || 'document.pdf'; pdfPassword = '';
+    pdfBytes = bytes.slice(0); pdfName = name || 'document.pdf'; pdfPassword = ''; smartName = '';
     if (editMode) toggleEdit(false);
     let doc = null, pw = '';
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -1009,7 +1009,7 @@
         }
       }
       const outB64 = await doc.saveAsBase64();
-      const nm = pdfName.replace(/\.pdf$/i, '') + '-edited.pdf';
+      const nm = (smartName || pdfName).replace(/\.pdf$/i, '') + '-edited.pdf';
       if (AB && AB.saveFile) AB.saveFile(nm, 'application/pdf', outB64);
       else { const arr = b64ToBytes(outB64); const u = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' })); const a = document.createElement('a'); a.href = u; a.download = nm; a.click(); }
       setStatus('Saved ' + nm + ' — page stays editable text');
@@ -1057,7 +1057,7 @@
   document.getElementById('pgSave').onclick = async () => {
     if (typeof PDFLib === 'undefined' || !pdfBytes) return;
     showLoading(true); setStatus('Saving PDF…');
-    try { const out = await buildEditedPdf(); const nm = pdfName.replace(/\.pdf$/i, '') + '-edited.pdf'; savePdfOut(nm, out); pagesmodal.classList.remove('show'); reopenPdfB64(out, nm); setStatus('Saved ' + nm); }
+    try { const out = await buildEditedPdf(); const nm = (smartName || pdfName).replace(/\.pdf$/i, '') + '-edited.pdf'; savePdfOut(nm, out); pagesmodal.classList.remove('show'); reopenPdfB64(out, nm); setStatus('Saved ' + nm); }
     catch (e) { setStatus('Save failed: ' + e.message); }
     showLoading(false);
   };
@@ -1998,6 +1998,72 @@
   }
 
   applyZoom(); renderTabs(); showSheet(); select(0, 0);
+  // ---------- Smart file name (rules + optional Groq AI) ----------
+  function smartNameFromText(text, origName) {
+    text = (text || '').replace(/\u0000/g, ' ');
+    const low = text.toLowerCase();
+    const titleCase = s => s.replace(/\s+/g, ' ').trim().split(' ').map(w => w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : '').join(' ');
+    const clean = s => (s || '').replace(/[^A-Za-z0-9]+/g, '').trim();
+    let org = '';
+    const orgMap = [
+      [/ahmedabad\s+municipal\s+corporation|\bamc\b/i, 'AMC'], [/surat\s+municipal\s+corporation|\bsmc\b/i, 'SMC'],
+      [/municipal\s+corporation/i, 'MunicipalCorp'], [/property\s+tax/i, 'PropertyTax'],
+      [/\binvoice\b/i, 'Invoice'], [/\breceipt\b/i, 'Receipt'], [/\bstatement\b/i, 'Statement'],
+      [/\bcertificate\b/i, 'Certificate'], [/prescription|\brx\b/i, 'Prescription'], [/tax\s+bill|\bbill\b/i, 'Bill']
+    ];
+    for (const [re, label] of orgMap) { if (re.test(low)) { org = label; break; } }
+    let name = '';
+    const m = text.match(/(?:owner\s*name|name\s*of\s*owner|party\s*name|patient\s*name|client\s*name|billed\s*to|shri|smt|mr|mrs|m\/s|name)\s*[:\-]?\s*([A-Za-z][A-Za-z.&' ]{2,40})/i);
+    if (m) { name = m[1].replace(/\s+(address|property|date|bill|amount|rs|rupees|phone|mobile|email|no|number|id|pin|city|state|ward|zone).*$/i, '').trim(); name = name.split(/\s+/).slice(0, 3).join(' '); }
+    let year = '';
+    const years = (text.match(/\b(20[1-3]\d)\b/g) || []).map(Number).filter(y => y >= 2015 && y <= 2030);
+    if (years.length) year = String(Math.max(...years));
+    const parts = [];
+    if (org) parts.push(clean(org));
+    if (name) parts.push(clean(titleCase(name)).slice(0, 24));
+    if (!org && !name) { const fl = text.split('\n').map(s => s.trim()).find(s => s.length > 3 && /[A-Za-z]/.test(s)); if (fl) parts.push(clean(titleCase(fl)).slice(0, 28)); }
+    if (year) parts.push(year);
+    let base = parts.filter(Boolean).join('-');
+    if (!base) base = clean((origName || 'document').replace(/\.pdf$/i, '')) || 'document';
+    return base.replace(/-+/g, '-').replace(/^-|-$/g, '') + '.pdf';
+  }
+  async function firstPagesText(maxPages) {
+    let out = '';
+    try { const n = Math.min(pdfDoc.numPages, maxPages || 2);
+      for (let p = 1; p <= n; p++) { const pg = await pdfDoc.getPage(p); const tc = await pg.getTextContent(); out += tc.items.map(i => i.str).join(' ') + '\n'; }
+    } catch (e) {}
+    return out;
+  }
+  function looksGarbled(t) { if (!t) return true; const letters = (t.match(/[A-Za-z0-9]/g) || []).length; const total = t.replace(/\s/g, '').length; return total < 8 || letters / Math.max(1, total) < 0.35; }
+  let smartName = '';
+  function groqKey() { try { return localStorage.getItem('brahm_groq_key') || ''; } catch (e) { return ''; } }
+  async function groqName(text) {
+    const key = groqKey(); if (!key) return '';
+    try {
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body: JSON.stringify({ model: 'llama-3.1-8b-instant', temperature: 0, messages: [{ role: 'system', content: 'You name files. Reply with ONLY a short filename (no extension), format Org-Name-Year, words joined by hyphens, from the document text. No spaces, no explanation.' }, { role: 'user', content: (text || '').slice(0, 1800) }] }) });
+      const j = await r.json(); let s = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content || '';
+      s = s.trim().replace(/[^A-Za-z0-9\- ]+/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+      return s ? s + '.pdf' : '';
+    } catch (e) { return ''; }
+  }
+  async function suggestPdfName(useGroq) {
+    if (!pdfDoc) return '';
+    let text = await firstPagesText(2);
+    if (looksGarbled(text) && AB && AB.ocr) { try { const r = await ocrImage(await pageToImgB64(1), 'hi', () => {}); if (r && r.text) text = r.text; } catch (e) {} }
+    let nm = '';
+    if (useGroq && groqKey()) nm = await groqName(text);
+    if (!nm) nm = smartNameFromText(text, pdfName);
+    return nm;
+  }
+  const btnSmart = document.getElementById('btnSmartName');
+  if (btnSmart) btnSmart.onclick = async () => {
+    if (!pdfDoc) { setStatus('Open a PDF first'); return; }
+    showLoading(true); setStatus('Reading document for a smart name…');
+    try { smartName = await suggestPdfName(true); setDocTitle(smartName + ' (suggested)'); setStatus('Suggested name: ' + smartName + ' — used when you Save / Export'); }
+    catch (e) { setStatus('Could not suggest a name'); }
+    showLoading(false);
+  };
+
   // ---------- Universal Export to PDF + Print ----------
   async function makeTextPdf(lines) {
     const { PDFDocument, rgb, StandardFonts } = PDFLib;
@@ -2063,7 +2129,7 @@
     return null;
   }
   function currentDocName() {
-    if (currentView === 'pdf') return (pdfName || 'document').replace(/\.pdf$/i, '');
+    if (currentView === 'pdf') return (smartName || pdfName || 'document').replace(/\.pdf$/i, '');
     if (currentView === 'text') return (textName || 'document').replace(/\.\w+$/, '');
     if (currentView === 'word') return (wordName || 'document').replace(/\.\w+$/, '');
     return 'document';
