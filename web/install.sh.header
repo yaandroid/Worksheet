@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# ===========================================================================
+#  BRAHM Office — Web/VPS installer  (Brahm InnerBrain Technologies Pvt. Ltd.)
+#  Self-contained: the whole web app is embedded below as a base64 tarball.
+#  Runs on a PORT (default 8080). Usage:
+#     bash install.sh            # install to ~/brahm-office-web and start on :8080
+#     PORT=9000 bash install.sh  # choose a port
+#     bash install.sh --service  # also install a systemd service (keeps it running)
+# ===========================================================================
+set -e
+PORT="${PORT:-8080}"
+DEST="${DEST:-$HOME/brahm-office-web}"
+WANT_SERVICE=0; [ "$1" = "--service" ] && WANT_SERVICE=1
+
+echo "BRAHM Office Web — installing to: $DEST  (port $PORT)"
+mkdir -p "$DEST"
+
+# ---- extract the embedded app ----
+TMP="$(mktemp)"
+sed -n '/^__PAYLOAD__$/,$p' "$0" | tail -n +2 | base64 -d > "$TMP"
+tar -xzf "$TMP" -C "$DEST"
+rm -f "$TMP"
+echo "App extracted."
+
+# ---- pick a runtime: prefer Node, else Python 3 ----
+if command -v node >/dev/null 2>&1; then RUNNER="node";
+elif command -v python3 >/dev/null 2>&1; then RUNNER="python3";
+else echo "ERROR: need Node.js or Python 3 installed."; exit 1; fi
+echo "Runtime: $RUNNER"
+
+if [ "$WANT_SERVICE" = "1" ] && command -v systemctl >/dev/null 2>&1; then
+  if [ "$RUNNER" = "node" ]; then EXECSTART="$(command -v node) $DEST/server.js $PORT";
+  else EXECSTART="$(command -v python3) -m http.server $PORT --directory $DEST/public"; fi
+  SVC=/etc/systemd/system/brahm-office-web.service
+  echo "Installing systemd service (needs sudo): $SVC"
+  sudo bash -c "cat > $SVC" <<UNIT
+[Unit]
+Description=BRAHM Office Web
+After=network.target
+[Service]
+ExecStart=$EXECSTART
+Restart=always
+User=$USER
+WorkingDirectory=$DEST
+[Install]
+WantedBy=multi-user.target
+UNIT
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now brahm-office-web
+  echo "Service started. Open: http://<server-ip>:$PORT"
+  exit 0
+fi
+
+echo ""
+echo "Starting BRAHM Office Web on http://0.0.0.0:$PORT  (Ctrl+C to stop)"
+echo "On a VPS, open: http://<server-ip>:$PORT"
+if [ "$RUNNER" = "node" ]; then
+  echo "Background:  nohup node \"$DEST/server.js\" $PORT >/tmp/brahm-web.log 2>&1 &"
+  echo ""
+  exec node "$DEST/server.js" "$PORT"
+else
+  echo "Background:  nohup python3 -m http.server $PORT --directory \"$DEST/public\" >/tmp/brahm-web.log 2>&1 &"
+  echo ""
+  exec python3 -m http.server "$PORT" --directory "$DEST/public"
+fi
+
+# ---- DO NOT EDIT BELOW: embedded app payload ----
+exit 0
+__PAYLOAD__

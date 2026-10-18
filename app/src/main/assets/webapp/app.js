@@ -434,6 +434,7 @@
     const t = (type || '').toLowerCase();
     if (t === 'pdf') { newBlankPdf(); }
     else if (t === 'word' || t === 'doc') { showWord('<p><br></p>', 'Untitled.docx'); }
+    else if (t === 'note' || t === 'text' || t === 'txt') { showEditableText('', 'Untitled note.txt'); }
     else if (t === 'sheet' || t === 'excel') { openBook([new E.Sheet('Sheet1')], 'New spreadsheet'); }
     else { openBook([new E.Sheet('Sheet1')], 'New spreadsheet'); }
   };
@@ -1257,7 +1258,7 @@
       : low.endsWith('.json') ? 'application/json' : 'text/plain';
     if (AB && AB.saveFile) AB.saveFile(textName, mime, b64);
     else { const a = document.createElement('a'); a.href = 'data:' + mime + ';base64,' + b64; a.download = textName; a.click(); }
-    setStatus('Saved ' + textName);
+    clearRecovery(); setStatus('Saved ' + textName);
   };
   function showHtml(s) { hideAll(); currentView = 'html'; htmlZoom = 1; htmlview.style.zoom = 1; htmlview.style.display = 'block'; htmlview.srcdoc = s; zoombar.classList.add('show'); setStatus('HTML'); }
   function showMarkdown(s) { showHtml('<pre style="white-space:pre-wrap;font-family:sans-serif;padding:14px;font-size:15px;line-height:1.6">' + s.replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[m])) + '</pre>'); }
@@ -1310,7 +1311,7 @@
       const nm = wordName.replace(/\.(docx?|rtf)$/i, '') + '-edited.docx';
       if (AB && AB.saveFile) AB.saveFile(nm, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b64);
       else { const u = b64ToBytes(b64); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })); a.download = nm; a.click(); }
-      setStatus('Saved ' + nm);
+      clearRecovery(); setStatus('Saved ' + nm);
     } catch (e) { setStatus('Save failed: ' + e.message); }
     showLoading(false);
   };
@@ -1321,6 +1322,83 @@
     } catch (e) { setStatus('Share failed'); }
   };
 
+  // ---------- Auto-save & recovery (text / note / Word editing) ----------
+  // Periodically snapshots the current editable document to the device so work isn't lost if the
+  // app closes mid-edit; on next open it offers to restore. Cleared on a real Save.
+  const RECOVERY_KEY = 'brahm_recovery_v1';
+  let recoverTimer = null;
+  function recoverySnapshot() {
+    try {
+      if (currentView === 'text' && textEditable) return { view: 'text', name: textName, content: textview.value };
+      if (currentView === 'word') { const p = wordview.querySelector('.page'); if (p) return { view: 'word', name: wordName, content: p.innerHTML }; }
+    } catch (e) {}
+    return null;
+  }
+  function saveRecovery() {
+    try {
+      const s = recoverySnapshot();
+      if (!s || !('' + s.content).trim()) return;
+      s.ts = Date.now(); localStorage.setItem(RECOVERY_KEY, JSON.stringify(s));
+    } catch (e) {}
+  }
+  function scheduleRecovery() { clearTimeout(recoverTimer); recoverTimer = setTimeout(saveRecovery, 1200); }
+  function clearRecovery() { try { localStorage.removeItem(RECOVERY_KEY); } catch (e) {} }
+  try { textview.addEventListener('input', scheduleRecovery); wordview.addEventListener('input', scheduleRecovery); } catch (e) {}
+  function offerRecovery() {
+    let snap = null; try { snap = JSON.parse(localStorage.getItem(RECOVERY_KEY) || 'null'); } catch (e) {}
+    if (!snap || !('' + (snap.content || '')).trim()) return;
+    const bar = document.createElement('div');
+    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#16233F;color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.35)';
+    const txt = document.createElement('span'); txt.style.flex = '1';
+    txt.textContent = 'Unsaved work found: "' + (snap.name || 'document') + '". Restore it?';
+    const restore = document.createElement('button'); restore.textContent = 'Restore';
+    const discard = document.createElement('button'); discard.textContent = 'Discard';
+    restore.style.cssText = discard.style.cssText = 'border:0;border-radius:8px;padding:7px 14px;font-weight:bold;cursor:pointer';
+    restore.style.background = '#1F9D63'; restore.style.color = '#fff';
+    discard.style.background = 'rgba(255,255,255,.12)'; discard.style.color = '#E8A33D';
+    restore.onclick = () => { try { if (snap.view === 'text') showEditableText(snap.content, snap.name); else if (snap.view === 'word') showWord(snap.content, snap.name); setStatus('Restored unsaved ' + (snap.name || 'document')); } catch (e) {} bar.remove(); };
+    discard.onclick = () => { clearRecovery(); bar.remove(); };
+    bar.appendChild(txt); bar.appendChild(restore); bar.appendChild(discard);
+    document.body.appendChild(bar);
+    setTimeout(() => { try { if (bar.parentNode) bar.remove(); } catch (e) {} }, 20000);
+  }
+  setTimeout(offerRecovery, 800);
+
+  // Render PPTX with real slide LAYOUT: each shape/text-box/picture placed at its actual position
+  // (EMU → px), with per-run bold/size/colour. Falls back to a simple text view if parsing fails.
+  const EMU = 914400, PTEMU = 12700, CW = 960;              // CW = rendered slide width in px
+  function pptEsc(t) { return (t || '').replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])); }
+  function pptAttr(block, re) { const m = block.match(re); return m ? m[1] : null; }
+  // One <a:p> paragraph → HTML with run formatting
+  function pptPara(pseg, pxPerEmu) {
+    const algn = pptAttr(pseg, /algn="(\w+)"/);
+    const align = algn === 'ctr' ? 'center' : algn === 'r' ? 'right' : algn === 'just' ? 'justify' : 'left';
+    let html = '';
+    const runs = [...pseg.matchAll(/<a:r>([\s\S]*?)<\/a:r>/g)];
+    const list = runs.length ? runs.map(m => m[1]) : (/<a:t>/.test(pseg) ? [pseg] : []);
+    for (const r of list) {
+      const t = [...r.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map(m => m[1]).join('');
+      if (!t) continue;
+      const rPr = (r.match(/<a:rPr[\s\S]*?(?:\/>|<\/a:rPr>)/) || [''])[0];
+      const b = /\bb="1"/.test(rPr), it = /\bi="1"/.test(rPr), u = /\bu="(?!none)/.test(rPr);
+      const szm = rPr.match(/\bsz="(\d+)"/); const col = rPr.match(/<a:srgbClr val="([0-9A-Fa-f]{6})"/);
+      let st = '';
+      if (szm) st += 'font-size:' + ((+szm[1] / 100) * PTEMU * pxPerEmu).toFixed(1) + 'px;';
+      if (b) st += 'font-weight:700;'; if (it) st += 'font-style:italic;'; if (u) st += 'text-decoration:underline;';
+      if (col) st += 'color:#' + col[1] + ';';
+      html += '<span style="' + st + '">' + pptEsc(t) + '</span>';
+    }
+    return html ? '<div style="text-align:' + align + ';margin:0 0 .18em">' + html + '</div>' : '';
+  }
+  function pptShapeBox(block, pxPerEmu, bodyHtml, extraStyle) {
+    const off = block.match(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/);
+    const ext = block.match(/<a:ext cx="(\d+)" cy="(\d+)"\/>/);
+    if (!off || !ext) return '';                               // no geometry → skip (placeholder w/o xfrm)
+    const x = (+off[1] * pxPerEmu), y = (+off[2] * pxPerEmu), w = (+ext[1] * pxPerEmu), h = (+ext[2] * pxPerEmu);
+    const anchor = pptAttr(block, /anchor="(\w+)"/);
+    const just = anchor === 'ctr' ? 'center' : anchor === 'b' ? 'flex-end' : 'flex-start';
+    return '<div style="position:absolute;left:' + x.toFixed(1) + 'px;top:' + y.toFixed(1) + 'px;width:' + w.toFixed(1) + 'px;height:' + h.toFixed(1) + 'px;display:flex;flex-direction:column;justify-content:' + just + ';overflow:hidden;' + (extraStyle || '') + '">' + bodyHtml + '</div>';
+  }
   async function openPptx(bytes, name) {
     hideAll(); showLoading(true); setStatus('Opening PowerPoint…');
     if (typeof JSZip === 'undefined') { showLoading(false); showText('Viewer unavailable.'); return; }
@@ -1328,22 +1406,61 @@
       const zip = await JSZip.loadAsync(bytes);
       const slideNames = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
         .sort((a, b) => (+a.match(/(\d+)/)[1]) - (+b.match(/(\d+)/)[1]));
-      let body = '';
+      // slide size from presentation.xml (default 16:9)
+      let slideW = 12192000, slideH = 6858000;
+      try { const pres = await zip.files['ppt/presentation.xml'].async('string'); const sz = pres.match(/<p:sldSz cx="(\d+)" cy="(\d+)"/); if (sz) { slideW = +sz[1]; slideH = +sz[2]; } } catch (e) {}
+      const pxPerEmu = CW / slideW, CH = slideH * pxPerEmu;
+      let body = '', usedLayout = false;
       for (let i = 0; i < slideNames.length; i++) {
-        const xml = await zip.files[slideNames[i]].async('string');
-        const paras = xml.split(/<a:p[ >]/).slice(1).map(seg => {
-          const runs = [...seg.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map(m => m[1]).join('');
-          return runs;
-        }).filter(t => t.trim());
-        const esc = (t) => t.replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[m]));
-        let inner = '<div class="snum">Slide ' + (i + 1) + '</div>';
-        if (paras.length) { inner += '<h2>' + esc(paras[0]) + '</h2>'; if (paras.length > 1) inner += paras.slice(1).map(p => '<p>' + esc(p) + '</p>').join(''); }
-        else inner += '<p style="color:#888">(no text — tap Images above for pictures)</p>';
-        body += '<div class="slide">' + inner + '</div>';
+        const sname = slideNames[i];
+        const xml = await zip.files[sname].async('string');
+        // resolve this slide's image relationships
+        const relPath = sname.replace(/slides\/(slide\d+)\.xml/, 'slides/_rels/$1.xml.rels');
+        const rels = {};
+        try { if (zip.files[relPath]) { const rx = await zip.files[relPath].async('string'); for (const m of rx.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/g)) rels[m[1]] = m[2]; } } catch (e) {}
+        let shapes = '';
+        // text shapes
+        for (const sp of xml.matchAll(/<p:sp>([\s\S]*?)<\/p:sp>/g)) {
+          const block = sp[1];
+          const paras = [...block.matchAll(/<a:p>([\s\S]*?)<\/a:p>/g)].map(m => pptPara(m[1], pxPerEmu)).join('');
+          if (paras) { shapes += pptShapeBox(block, pxPerEmu, paras, 'padding:4px 8px'); usedLayout = true; }
+        }
+        // pictures
+        for (const pic of xml.matchAll(/<p:pic>([\s\S]*?)<\/p:pic>/g)) {
+          const block = pic[1];
+          const embed = block.match(/r:embed="(rId\d+)"/);
+          if (!embed || !rels[embed[1]]) continue;
+          const target = rels[embed[1]].replace(/^\.\.\//, 'ppt/');
+          const f = zip.files[target]; if (!f) continue;
+          try { const b64 = await f.async('base64'); const mime = /\.png$/i.test(target) ? 'image/png' : /\.gif$/i.test(target) ? 'image/gif' : 'image/jpeg';
+            shapes += pptShapeBox(block, pxPerEmu, '<img src="data:' + mime + ';base64,' + b64 + '" style="width:100%;height:100%;object-fit:contain"/>'); usedLayout = true; } catch (e) {}
+        }
+        const sc = 'min(1, (100vw - 24px) / ' + CW + ')';
+        body += '<div class="swrap"><div class="snum">Slide ' + (i + 1) + '</div>'
+          + '<div class="slide" style="width:' + CW + 'px;height:' + CH.toFixed(0) + 'px;transform:scale(' + sc + ')">' + shapes + '</div></div>';
+      }
+      if (!usedLayout) {   // nothing positioned → simple text fallback
+        body = '';
+        for (let i = 0; i < slideNames.length; i++) {
+          const xml = await zip.files[slideNames[i]].async('string');
+          const paras = xml.split(/<a:p[ >]/).slice(1).map(seg => [...seg.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map(m => m[1]).join('')).filter(t => t.trim());
+          let inner = '<div class="snum">Slide ' + (i + 1) + '</div>';
+          if (paras.length) { inner += '<h2>' + pptEsc(paras[0]) + '</h2>' + paras.slice(1).map(p => '<p>' + pptEsc(p) + '</p>').join(''); }
+          else inner += '<p style="color:#888">(no text — tap Images above for pictures)</p>';
+          body += '<div class="slide txt">' + inner + '</div>';
+        }
       }
       if (!body) body = '<p>No slides found.</p>';
-      const css = '<style>html,body{margin:0;background:#525659}.slide{max-width:820px;margin:14px auto;background:#fff;color:#1a1a1a;padding:34px 40px;box-shadow:0 2px 14px rgba(0,0,0,.4);border-radius:3px;font-family:Calibri,"Segoe UI",sans-serif;min-height:380px}.slide h2{font-size:24px;color:#16233F;margin:.1em 0 .5em;border-bottom:3px solid #E8A33D;padding-bottom:8px}.slide p{font-size:17px;line-height:1.5;margin:.5em 0}.snum{font-size:12px;color:#8a93a3;margin-bottom:6px}@media(max-width:700px){.slide{padding:22px 18px;margin:8px auto}}</style><meta name="viewport" content="width=device-width,initial-scale=1">';
-      showHtml(css + body); setStatus('PowerPoint · ' + slideNames.length + ' slides · ' + name);
+      const css = '<style>html,body{margin:0;background:#525659;font-family:Calibri,"Segoe UI",Arial,sans-serif}'
+        + '.swrap{margin:16px auto;width:' + CW + 'px;max-width:calc(100vw - 24px)}'
+        + '.slide{position:relative;background:#fff;color:#1a1a1a;box-shadow:0 2px 16px rgba(0,0,0,.45);border-radius:3px;transform-origin:top left;overflow:hidden}'
+        + '.swrap{height:auto}'
+        + '.slide.txt{height:auto !important;transform:none !important;max-width:820px;padding:30px 38px;min-height:360px}'
+        + '.slide.txt h2{font-size:24px;color:#16233F;margin:.1em 0 .5em;border-bottom:3px solid #E8A33D;padding-bottom:8px}.slide.txt p{font-size:17px;line-height:1.5}'
+        + '.snum{font-size:12px;color:#cdd3dd;margin-bottom:6px}</style><meta name="viewport" content="width=device-width,initial-scale=1">';
+      // wrap: the scaled slide needs its wrapper height to match the scaled height
+      const script = '<script>document.querySelectorAll(".swrap").forEach(function(w){var s=w.querySelector(".slide");if(!s||s.classList.contains("txt"))return;var sc=Math.min(1,(window.innerWidth-24)/' + CW + ');w.style.height=(s.offsetHeight*sc+6)+"px";});<\/script>';
+      showHtml(css + body + script); setStatus('PowerPoint · ' + slideNames.length + ' slides · ' + name);
     } catch (e) { showText('Could not render ' + name); }
     showLoading(false);
   }

@@ -27,6 +27,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.brahm.office.R
 import com.brahm.office.files.FileAdapter
 import com.brahm.office.util.DocType
+import com.brahm.office.util.FavRepo
 import com.brahm.office.util.FileItem
 import com.brahm.office.util.FileRepo
 import com.brahm.office.util.Recents
@@ -39,13 +40,14 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var adapter: FileAdapter
     private lateinit var empty: TextView
-    private lateinit var gridTiles: android.widget.GridLayout
+    private lateinit var gridTiles: LinearLayout
     private lateinit var sectionLabel: TextView
     private lateinit var tabsView: TabLayout
     private var tab = 0
     private var query = ""
     private var all: List<FileItem> = emptyList()
     private var typeFilter = "ALL"
+    private var favOnly = false
     private var sortMode = "DATE"
 
     private val permLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { reload() }
@@ -78,6 +80,7 @@ class MainActivity : AppCompatActivity() {
         gridTiles = findViewById(R.id.gridTiles)
         sectionLabel = findViewById(R.id.sectionLabel)
         tabsView = findViewById(R.id.tabs)
+        findViewById<View>(R.id.filterBtn).setOnClickListener { showFilterMenu(it) }
 
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(toolbar) { v, insets ->
             val b = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
@@ -94,6 +97,7 @@ class MainActivity : AppCompatActivity() {
         swipe.setOnRefreshListener { reload(); swipe.postDelayed({ swipe.isRefreshing = false }, 350) }
 
         findViewById<Button>(R.id.selShare).setOnClickListener { shareSelected() }
+        findViewById<Button>(R.id.selStar).setOnClickListener { starSelected() }
         findViewById<Button>(R.id.selCancel).setOnClickListener { adapter.clearSelection() }
 
         buildTiles()
@@ -135,30 +139,30 @@ class MainActivity : AppCompatActivity() {
         Tile("📷", "Scan", "#8E44AD", "scan")
     )
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+    // Horizontal, scrollable row of tiles (standard-app look)
     private fun buildTiles() {
         gridTiles.removeAllViews()
-        val cols = 4
-        for ((i, t) in tileDefs.withIndex()) {
+        for (t in tileDefs) {
             val tile = LinearLayout(this)
             tile.orientation = LinearLayout.VERTICAL
             tile.gravity = android.view.Gravity.CENTER
-            tile.setPadding(dp(4), dp(10), dp(4), dp(10))
+            tile.setPadding(dp(6), dp(8), dp(6), dp(8))
 
             val iconBox = TextView(this)
             iconBox.text = t.icon
-            iconBox.textSize = 22f
+            iconBox.textSize = 23f
             iconBox.gravity = android.view.Gravity.CENTER
             val d = android.graphics.drawable.GradientDrawable()
-            d.cornerRadius = dp(16).toFloat()
+            d.cornerRadius = dp(18).toFloat()
             d.setColor(Color.parseColor(t.color))
             iconBox.background = d
-            val ib = LinearLayout.LayoutParams(dp(52), dp(52))
-            iconBox.layoutParams = ib
+            iconBox.layoutParams = LinearLayout.LayoutParams(dp(56), dp(56))
 
             val lbl = TextView(this)
             lbl.text = t.label
             lbl.textSize = 11.5f
             lbl.gravity = android.view.Gravity.CENTER
+            lbl.maxLines = 1
             lbl.setTextColor(Color.parseColor("#16233F"))
             val lp2 = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp2.topMargin = dp(6)
@@ -169,14 +173,36 @@ class MainActivity : AppCompatActivity() {
             tile.isClickable = true
             tile.background = resolveRipple()
 
-            val glp = android.widget.GridLayout.LayoutParams()
-            glp.width = 0; glp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-            glp.columnSpec = android.widget.GridLayout.spec(i % cols, 1f)
-            glp.rowSpec = android.widget.GridLayout.spec(i / cols)
-            glp.setMargins(dp(4), dp(4), dp(4), dp(4))
-            tile.layoutParams = glp
+            val lp = LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(dp(3), dp(2), dp(3), dp(2))
+            tile.layoutParams = lp
             gridTiles.addView(tile)
         }
+    }
+    // Filter dropdown: pick the file type to show on the All-files tab
+    private fun showFilterMenu(anchor: View) {
+        val pm = android.widget.PopupMenu(this, anchor)
+        // itemId 0 = Favorites toggle; 1.. = type filters
+        val favItem = pm.menu.add(0, 0, 0, "⭐ Favorites only"); favItem.isCheckable = true; favItem.isChecked = favOnly
+        val opts = listOf("ALL" to "All files", "PDF" to "PDF", "EXCEL" to "Excel", "WORD" to "Word", "PPT" to "PowerPoint")
+        for ((i, o) in opts.withIndex()) {
+            val mi = pm.menu.add(1, i + 1, i + 1, o.second); mi.isCheckable = true; mi.isChecked = (typeFilter == o.first)
+        }
+        pm.setOnMenuItemClickListener { item ->
+            if (item.itemId == 0) { favOnly = !favOnly }
+            else { typeFilter = opts[item.itemId - 1].first }
+            if (tab != 1) { tabsView.getTabAt(1)?.select() } else { updateSectionLabel(); reload() }
+            true
+        }
+        pm.show()
+    }
+    private fun starSelected() {
+        val sel = adapter.selectedItems(); if (sel.isEmpty()) return
+        // if any selected isn't a favorite, star all; else un-star all (toggle on the group)
+        val anyNotFav = sel.any { !FavRepo.isFav(this, it.path) }
+        FavRepo.setFav(this, sel.map { it.path }, anyNotFav)
+        android.widget.Toast.makeText(this, if (anyNotFav) "Added to favorites" else "Removed from favorites", android.widget.Toast.LENGTH_SHORT).show()
+        adapter.clearSelection(); reload()
     }
     private fun resolveRipple(): android.graphics.drawable.Drawable? {
         return try {
@@ -199,7 +225,7 @@ class MainActivity : AppCompatActivity() {
     }
     private fun updateSectionLabel() {
         sectionLabel.text = when (tab) {
-            1 -> "All files" + (if (typeFilter != "ALL") " · ${typeFilter.lowercase().replaceFirstChar { it.uppercase() }}" else "")
+            1 -> (if (favOnly) "⭐ Favorites" else "All files") + (if (typeFilter != "ALL") " · ${typeFilter.lowercase().replaceFirstChar { it.uppercase() }}" else "")
             2 -> "Tools"
             else -> "Recent"
         }
@@ -351,7 +377,7 @@ class MainActivity : AppCompatActivity() {
         }
         // ---- All files: grouped by folder ----
         val q = query.lowercase()
-        val filtered = all.filter { typeMatch(it.type) && (q.isBlank() || it.name.lowercase().contains(q)) }
+        val filtered = all.filter { typeMatch(it.type) && (!favOnly || FavRepo.isFav(this, it.path)) && (q.isBlank() || it.name.lowercase().contains(q)) }
         if (filtered.isEmpty()) {
             adapter.submit(emptyList()); empty.visibility = View.VISIBLE
             val tree = TreeRepo.getTree(this)
