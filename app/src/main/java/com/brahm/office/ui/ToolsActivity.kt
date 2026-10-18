@@ -2,6 +2,7 @@ package com.brahm.office.ui
 
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
@@ -13,15 +14,19 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.brahm.office.util.DocType
+import com.brahm.office.util.FileCache
+import com.brahm.office.util.FileItem
 import com.brahm.office.util.Recents
 import java.io.ByteArrayOutputStream
 
-/** A per-category tools screen (e.g. all PDF tools in one grid). Each tool opens a file (if needed) and auto-runs. */
+/** A per-category screen: New + Open actions on top, and the list of that category's files below. */
 class ToolsActivity : AppCompatActivity() {
 
     private data class Tool(val icon: String, val label: String, val color: String, val action: String)
     private var pendingAuto: String? = null
-    private var pickKind = "pdf"
+    private var category = "PDF"
+    private lateinit var listHolder: LinearLayout
 
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -41,9 +46,9 @@ class ToolsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val cat = intent.getStringExtra("category") ?: "PDF"
+        category = intent.getStringExtra("category") ?: "PDF"
         val toolbar = com.google.android.material.appbar.MaterialToolbar(this)
-        toolbar.title = catTitle(cat)
+        toolbar.title = catTitle(category)
         toolbar.setBackgroundColor(Color.parseColor("#16233F"))
         toolbar.setTitleTextColor(Color.WHITE)
         toolbar.navigationIcon = androidx.core.content.ContextCompat.getDrawable(this, android.R.drawable.ic_menu_revert)
@@ -55,30 +60,52 @@ class ToolsActivity : AppCompatActivity() {
         root.addView(toolbar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         val scroll = ScrollView(this); scroll.isFillViewport = true
+        val col = LinearLayout(this); col.orientation = LinearLayout.VERTICAL
+
         val grid = GridLayout(this); grid.columnCount = 2
-        grid.setPadding(dp(8), dp(10), dp(8), dp(16))
-        for (t in toolsFor(cat)) grid.addView(buildCard(t, grid))
-        scroll.addView(grid)
+        grid.setPadding(dp(8), dp(10), dp(8), dp(6))
+        for (t in toolsFor(category)) grid.addView(buildCard(t, grid))
+        col.addView(grid)
+
+        listHolder = LinearLayout(this); listHolder.orientation = LinearLayout.VERTICAL
+        listHolder.setPadding(dp(14), dp(6), dp(14), dp(16))
+        col.addView(listHolder)
+
+        scroll.addView(col)
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
+        buildFileList()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::listHolder.isInitialized) buildFileList()
     }
 
     private fun catTitle(c: String) = when (c) {
-        "PDF" -> "PDF tools"; "EXCEL" -> "Excel"; "WORD" -> "Word"; "PPT" -> "PowerPoint"; else -> c
+        "PDF" -> "PDF"; "EXCEL" -> "Excel"; "WORD" -> "Word"; "PPT" -> "PowerPoint"; else -> c
+    }
+
+    private fun typesFor(cat: String): Set<DocType> = when (cat) {
+        "PDF" -> setOf(DocType.PDF)
+        "EXCEL" -> setOf(DocType.EXCEL, DocType.CSV)
+        "WORD" -> setOf(DocType.WORD, DocType.TEXT)
+        "PPT" -> setOf(DocType.PPT)
+        else -> emptySet()
     }
 
     private fun toolsFor(cat: String): List<Tool> = when (cat) {
         "PDF" -> listOf(
+            Tool("➕", "New PDF", "#1F9D63", "new:pdf"),
             Tool("📂", "Open PDF", "#E8A33D", "open:pdf"),
-            Tool("✏️", "Edit text", "#1F9D63", "tool:edit"),
-            Tool("🔒", "Add password", "#2B579A", "tool:pwadd"),
-            Tool("🔓", "Remove password", "#5B6472", "tool:pwremove"),
+            Tool("✏️", "Edit text", "#2B579A", "tool:edit"),
+            Tool("🔒", "Add password", "#5B6472", "tool:pwadd"),
+            Tool("🔓", "Remove password", "#8E44AD", "tool:pwremove"),
             Tool("📝", "PDF → Word (Hindi/OCR)", "#D24726", "tool:toword"),
-            Tool("🖼", "PDF → Word (same look)", "#8E44AD", "tool:towordlook"),
+            Tool("🖼", "PDF → Word (same look)", "#16A085", "tool:towordlook"),
             Tool("📄", "PDF → Text", "#2B579A", "tool:totext"),
             Tool("📤", "PDF → Images", "#1F9D63", "tool:toimages"),
-            Tool("📑", "Organize pages", "#D64541", "tool:pages"),
-            Tool("🔎", "Read text (OCR)", "#16A085", "tool:ocr")
+            Tool("📑", "Organize pages", "#D64541", "tool:pages")
         )
         "EXCEL" -> listOf(
             Tool("➕", "New spreadsheet", "#1F9D63", "new:sheet"),
@@ -92,6 +119,98 @@ class ToolsActivity : AppCompatActivity() {
             Tool("📂", "Open PowerPoint", "#E8A33D", "open:ppt")
         )
         else -> emptyList()
+    }
+
+    // ---- category file list ----
+    private fun buildFileList() {
+        listHolder.removeAllViews()
+        val wanted = typesFor(category)
+        val items = try { FileCache.load(this) } catch (e: Exception) { emptyList<FileItem>() }
+            .filter { it.type in wanted }
+            .sortedByDescending { it.modified }
+            .take(60)
+
+        val hdr = TextView(this)
+        hdr.text = "Recent ${catTitle(category)}" + if (items.isNotEmpty()) "  (${items.size})" else ""
+        hdr.textSize = 14.5f; hdr.setTypeface(null, Typeface.BOLD)
+        hdr.setTextColor(Color.parseColor("#16233F"))
+        hdr.setPadding(dp(2), dp(6), dp(2), dp(8))
+        listHolder.addView(hdr)
+
+        if (items.isEmpty()) {
+            val empty = TextView(this)
+            empty.text = "No ${catTitle(category)} files yet. Tap New or Open above."
+            empty.textSize = 13f; empty.setTextColor(Color.parseColor("#8A93A3"))
+            empty.setPadding(dp(2), dp(10), dp(2), dp(10))
+            listHolder.addView(empty)
+            return
+        }
+        for (f in items) listHolder.addView(buildFileRow(f))
+    }
+
+    private fun buildFileRow(f: FileItem): LinearLayout {
+        val row = LinearLayout(this); row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        val bg = GradientDrawable(); bg.cornerRadius = dp(12).toFloat(); bg.setColor(Color.WHITE)
+        row.background = bg; row.elevation = dp(1).toFloat()
+        row.setPadding(dp(12), dp(12), dp(12), dp(12))
+
+        val badge = TextView(this)
+        badge.text = extOf(f.name)
+        badge.textSize = 10f; badge.setTypeface(null, Typeface.BOLD); badge.gravity = Gravity.CENTER
+        badge.setTextColor(Color.WHITE)
+        val bd = GradientDrawable(); bd.cornerRadius = dp(9).toFloat(); bd.setColor(Color.parseColor(colorFor(f.type)))
+        badge.background = bd
+        val blp = LinearLayout.LayoutParams(dp(40), dp(40)); blp.marginEnd = dp(12); badge.layoutParams = blp
+
+        val txt = LinearLayout(this); txt.orientation = LinearLayout.VERTICAL
+        txt.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        val nm = TextView(this); nm.text = f.name; nm.textSize = 13.5f
+        nm.setTextColor(Color.parseColor("#16233F")); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        val sub = TextView(this); sub.text = relTime(f.modified) + "  ·  " + humanSize(f.size)
+        sub.textSize = 11.5f; sub.setTextColor(Color.parseColor("#8A93A3"))
+        txt.addView(nm); txt.addView(sub)
+
+        row.addView(badge); row.addView(txt)
+        row.isClickable = true; row.foreground = ripple()
+        row.setOnClickListener {
+            try {
+                Recents.add(this, f.path)
+                startActivity(Intent(this, DocActivity::class.java).putExtra("path", f.path))
+            } catch (e: Exception) { Toast.makeText(this, "Could not open", Toast.LENGTH_SHORT).show() }
+        }
+        val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        lp.setMargins(0, dp(4), 0, dp(4)); row.layoutParams = lp
+        return row
+    }
+
+    private fun extOf(name: String): String {
+        val i = name.lastIndexOf('.')
+        val e = if (i in 1 until name.length - 1) name.substring(i + 1) else "FILE"
+        return e.uppercase().take(4)
+    }
+
+    private fun colorFor(t: DocType) = when (t) {
+        DocType.PDF -> "#D64541"; DocType.WORD -> "#2B579A"; DocType.EXCEL -> "#1F9D63"
+        DocType.CSV -> "#16A085"; DocType.PPT -> "#D24726"; DocType.TEXT -> "#5B6472"; else -> "#8A93A3"
+    }
+
+    private fun humanSize(b: Long): String {
+        if (b <= 0) return "0 B"
+        val u = arrayOf("B", "KB", "MB", "GB"); var s = b.toDouble(); var i = 0
+        while (s >= 1024 && i < u.size - 1) { s /= 1024; i++ }
+        return (if (s >= 10 || i == 0) "%.0f".format(s) else "%.1f".format(s)) + " " + u[i]
+    }
+
+    private fun relTime(ms: Long): String {
+        if (ms <= 0) return ""
+        val d = System.currentTimeMillis() - ms
+        val min = d / 60000; val hr = min / 60; val day = hr / 24
+        return when {
+            min < 1 -> "just now"; min < 60 -> "${min}m ago"; hr < 24 -> "${hr}h ago"
+            day < 7 -> "${day}d ago"
+            else -> android.text.format.DateFormat.format("dd MMM yyyy", ms).toString()
+        }
     }
 
     private fun buildCard(t: Tool, parent: GridLayout): LinearLayout {

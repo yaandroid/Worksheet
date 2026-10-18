@@ -23,7 +23,10 @@ body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(-
 #pdfwrap iframe,#pdfwrap embed{width:100%;height:100%;border:0}
 .hidden{display:none!important}
 .statusbar{flex:0 0 auto;background:var(--navy);color:#b8c2d4;font-size:11px;padding:4px 12px;display:flex;justify-content:space-between}
-.sheettabs{display:flex;gap:4px;align-items:center}
+.sheettabs{display:flex;gap:4px;align-items:center;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;white-space:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+.sheettabs .sheettab{flex:0 0 auto}
+.sheettabs::-webkit-scrollbar{height:4px}
+.sheettabs::-webkit-scrollbar-thumb{background:#8a93a3;border-radius:3px}
 .sheettab{background:#24324f;color:#fff;border-radius:6px 6px 0 0;padding:4px 12px;font-size:12px;cursor:pointer}
 .sheettab.active{background:var(--saffron);color:#2a1d00;font-weight:600}
 

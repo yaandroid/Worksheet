@@ -35,6 +35,48 @@
   const htmlview = document.getElementById('htmlview');
   const wordview = document.getElementById('wordview');
   const loading = document.getElementById('loading');
+
+  // ---- Soft-keyboard: keep the typing caret above the keyboard (Word note + text note) ----
+  (function setupKeyboardScroll() {
+    function kbOverlap() {
+      const vv = window.visualViewport;
+      if (!vv) return 0;
+      return Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    }
+    function applyPad() {
+      const pad = kbOverlap();
+      const px = pad > 40 ? (pad + 24) + 'px' : '';
+      if (textview) textview.style.paddingBottom = px;
+      if (wordview) wordview.style.paddingBottom = px;
+      if (pad > 40) scrollCaret();
+    }
+    function scrollCaret() {
+      try {
+        const vv = window.visualViewport;
+        const kbTop = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount && wordview && wordview.style.display !== 'none' && wordview.contains(sel.anchorNode)) {
+          const r = sel.getRangeAt(0).cloneRange();
+          let rect = r.getClientRects()[0];
+          if (!rect) {
+            const sp = document.createElement('span'); sp.textContent = '​';
+            r.insertNode(sp); rect = sp.getBoundingClientRect();
+            if (sp.parentNode) sp.parentNode.removeChild(sp);
+          }
+          if (rect && rect.bottom > kbTop - 12) wordview.scrollTop += (rect.bottom - (kbTop - 12));
+          else if (rect && rect.top < 70) wordview.scrollTop -= (70 - rect.top);
+        }
+      } catch (e) {}
+    }
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', applyPad);
+      window.visualViewport.addEventListener('scroll', applyPad);
+    }
+    const onEdit = () => setTimeout(() => { applyPad(); scrollCaret(); }, 60);
+    if (wordview) { wordview.addEventListener('input', onEdit); wordview.addEventListener('focusin', onEdit); wordview.addEventListener('click', onEdit); }
+    if (textview) { textview.addEventListener('focus', onEdit); }
+  })();
+
   const fbar = document.getElementById('fbar');
   const zoombar = document.getElementById('zoombar');
   const cellref = document.getElementById('cellref');
@@ -52,8 +94,8 @@
   let rangeMode = false, clipRange = null;
   const selBox = () => ({ r1: Math.min(selR, selR2), c1: Math.min(selC, selC2), r2: Math.max(selR, selR2), c2: Math.max(selC, selC2) });
   const hasRange = () => selR2 !== selR || selC2 !== selC;
-  function cellAtXY(x, y) { if (x < rowHead || y < colHead) return null; const c = Math.floor((scrollX + x - rowHead) / cellW), r = Math.floor((scrollY + y - colHead) / cellH); if (r < 0 || r >= E.MAX_ROWS || c < 0 || c >= E.MAX_COLS) return null; return { r, c }; }
-  function fillHandleScreen() { const b = selBox(); return { x: rowHead + (b.c2 + 1) * cellW - scrollX, y: colHead + (b.r2 + 1) * cellH - scrollY }; }
+  function cellAtXY(x, y) { if (x < rowHead || y < colHead) return null; const c = colAtX(scrollX + x - rowHead), r = rowAtY(scrollY + y - colHead); if (r < 0 || r >= E.MAX_ROWS || c < 0 || c >= E.MAX_COLS) return null; return { r, c }; }
+  function fillHandleScreen() { const b = selBox(); return { x: rowHead + colX(b.c2 + 1) - scrollX, y: colHead + rowY(b.r2 + 1) - scrollY }; }
 
   // ---- conditional formatting ----
   function cfFor(r, c, v) {
@@ -115,7 +157,21 @@
   function setStatus(s) { document.getElementById('status').textContent = s + ' · Developed by Sandeep Kushwah'; }
 
   // ---------- grid draw ----------
-  function applyZoom() { cellW = Math.round(BASE_W * gridZoom); cellH = Math.round(BASE_H * gridZoom); }
+  function applyZoom() { cellW = Math.round(BASE_W * gridZoom); cellH = Math.round(BASE_H * gridZoom); rebuildGrid(); }
+  // Per-column widths / per-row heights (stored on the sheet so each sheet keeps its own). Prefix sums
+  // let the grid draw and hit-test with variable sizes; drag a header border to resize.
+  let colStart = new Float64Array(E.MAX_COLS + 1), rowStart = new Float64Array(E.MAX_ROWS + 1);
+  function cwOf(c) { const o = sheet() && sheet().cw; return (o && o[c]) || cellW; }
+  function rhOf(r) { const o = sheet() && sheet().rh; return (o && o[r]) || cellH; }
+  function rebuildGrid() {
+    const s = sheet(); const cw = s && s.cw, rh = s && s.rh;
+    let acc = 0; colStart[0] = 0; for (let c = 0; c < E.MAX_COLS; c++) { acc += (cw && cw[c]) || cellW; colStart[c + 1] = acc; }
+    acc = 0; rowStart[0] = 0; for (let r = 0; r < E.MAX_ROWS; r++) { acc += (rh && rh[r]) || cellH; rowStart[r + 1] = acc; }
+  }
+  const colX = (c) => colStart[c], rowY = (r) => rowStart[r];
+  function colAtX(wx) { let lo = 0, hi = E.MAX_COLS; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (colStart[m] <= wx) lo = m; else hi = m - 1; } return lo; }
+  function rowAtY(wy) { let lo = 0, hi = E.MAX_ROWS; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (rowStart[m] <= wy) lo = m; else hi = m - 1; } return lo; }
+  rebuildGrid();
   function resize() {
     dpr = window.devicePixelRatio || 1;
     const r = canvas.getBoundingClientRect();
@@ -125,67 +181,82 @@
   window.addEventListener('resize', resize);
   const viewW = () => canvas.width / dpr - rowHead;
   const viewH = () => canvas.height / dpr - colHead;
-  const maxSX = () => Math.max(0, E.MAX_COLS * cellW - viewW());
-  const maxSY = () => Math.max(0, E.MAX_ROWS * cellH - viewH());
+  const maxSX = () => Math.max(0, colStart[E.MAX_COLS] - viewW());
+  const maxSY = () => Math.max(0, rowStart[E.MAX_ROWS] - viewH());
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
   let curFs = 13;
   let freezeOn = false;
+  function wrapLines(text, maxW) {
+    const words = ('' + text).split(/\s+/); const lines = []; let cur = '';
+    for (const w of words) { const t = cur ? cur + ' ' + w : w; if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; }
+    if (cur) lines.push(cur); return lines.length ? lines : [''];
+  }
   function drawCellAt(r, c, left, top) {
+    const W = cwOf(c), H = rhOf(r);
     const f = fmtGet(sheet(), r, c);
     const v = sheet().value(r, c);
     const cf = cfFor(r, c, v);
     ctx.fillStyle = (cf && cf.bg) ? cf.bg : ((f && f.fill) ? f.fill : ((r % 2 === 0) ? '#fff' : '#fafbfc'));
-    ctx.fillRect(left, top, cellW, cellH);
-    if (r === selR && c === selC) { ctx.fillStyle = 'rgba(31,157,99,.18)'; ctx.fillRect(left, top, cellW, cellH); }
-    ctx.strokeStyle = '#dce1e8'; ctx.lineWidth = 1; ctx.strokeRect(left + .5, top + .5, cellW, cellH);
+    ctx.fillRect(left, top, W, H);
+    if (r === selR && c === selC) { ctx.fillStyle = 'rgba(31,157,99,.18)'; ctx.fillRect(left, top, W, H); }
+    ctx.strokeStyle = '#dce1e8'; ctx.lineWidth = 1; ctx.strokeRect(left + .5, top + .5, W, H);
     const isNum = v && v.t === 'num';
     let t = (f && f.nf && isNum) ? formatNum(v.n, f.nf) : sheet().display(r, c);
-    if (t) { ctx.save(); ctx.beginPath(); ctx.rect(left, top, cellW, cellH); ctx.clip();
+    if (t) { ctx.save(); ctx.beginPath(); ctx.rect(left, top, W, H); ctx.clip();
       ctx.font = ((f && f.i) ? 'italic ' : '') + ((f && f.b) ? 'bold ' : '') + curFs + 'px sans-serif';
       ctx.fillStyle = (v && v.t === 'err') ? '#D64541' : ((cf && cf.fg) ? cf.fg : ((f && f.color) ? f.color : '#16233F'));
-      if (isNum) { ctx.textAlign = 'right'; ctx.fillText(t, left + cellW - 6, top + cellH * .68); }
-      else { ctx.textAlign = 'left'; ctx.fillText(t, left + 6, top + cellH * .68); }
+      const lineH = curFs * 1.25;
+      // Wrap into multiple lines when the row is tall enough to show them (otherwise single clipped line).
+      const needWrap = !isNum && H > cellH + 2 && ctx.measureText(t).width > W - 10;
+      if (needWrap) {
+        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        const lines = wrapLines(t, W - 10); let yy = top + 4;
+        for (const ln of lines) { if (yy > top + H - 2) break; ctx.fillText(ln, left + 6, yy); yy += lineH; }
+        ctx.textBaseline = 'alphabetic';
+      } else if (isNum) { ctx.textAlign = 'right'; ctx.fillText(t, left + W - 6, top + H * .62); }
+      else { ctx.textAlign = 'left'; ctx.fillText(t, left + 6, top + H * .62); }
       ctx.restore(); ctx.font = curFs + 'px sans-serif'; }
-    // data-validation ▾ marker (bottom-right) and comment triangle (top-right)
     const s = sheet();
-    if (s.dv && s.dv[cellKey(r, c)]) { ctx.fillStyle = '#2B579A'; ctx.beginPath(); ctx.moveTo(left + cellW - 11, top + cellH - 6); ctx.lineTo(left + cellW - 3, top + cellH - 6); ctx.lineTo(left + cellW - 7, top + cellH - 1); ctx.fill(); }
-    if (s.comments && s.comments[cellKey(r, c)]) { ctx.fillStyle = '#D64541'; ctx.beginPath(); ctx.moveTo(left + cellW - 7, top + 1); ctx.lineTo(left + cellW - 1, top + 1); ctx.lineTo(left + cellW - 1, top + 7); ctx.fill(); }
+    if (s.dv && s.dv[cellKey(r, c)]) { ctx.fillStyle = '#2B579A'; ctx.beginPath(); ctx.moveTo(left + W - 11, top + H - 6); ctx.lineTo(left + W - 3, top + H - 6); ctx.lineTo(left + W - 7, top + H - 1); ctx.fill(); }
+    if (s.comments && s.comments[cellKey(r, c)]) { ctx.fillStyle = '#D64541'; ctx.beginPath(); ctx.moveTo(left + W - 7, top + 1); ctx.lineTo(left + W - 1, top + 1); ctx.lineTo(left + W - 1, top + 7); ctx.fill(); }
   }
+  let gridSheetRef = null;
   function draw() {
     if (canvas.style.display === 'none') return;
+    if (gridSheetRef !== sheet()) { gridSheetRef = sheet(); rebuildGrid(); }   // re-measure on sheet switch
     const w = canvas.width / dpr, h = canvas.height / dpr;
     ctx.clearRect(0, 0, w, h);
     curFs = Math.max(11, Math.round(13 * gridZoom));
     ctx.font = curFs + 'px sans-serif';
-    const fC = Math.max(0, Math.floor(scrollX / cellW));
-    const lC = Math.min(E.MAX_COLS - 1, Math.floor((scrollX + viewW()) / cellW));
-    const fR = Math.max(0, Math.floor(scrollY / cellH));
-    const lR = Math.min(E.MAX_ROWS - 1, Math.floor((scrollY + viewH()) / cellH));
-    for (let r = fR; r <= lR; r++) { const top = colHead + r * cellH - scrollY;
-      for (let c = fC; c <= lC; c++) drawCellAt(r, c, rowHead + c * cellW - scrollX, top); }
+    const fC = Math.max(0, colAtX(scrollX));
+    const lC = Math.min(E.MAX_COLS - 1, colAtX(scrollX + viewW()));
+    const fR = Math.max(0, rowAtY(scrollY));
+    const lR = Math.min(E.MAX_ROWS - 1, rowAtY(scrollY + viewH()));
+    for (let r = fR; r <= lR; r++) { const top = colHead + rowY(r) - scrollY;
+      for (let c = fC; c <= lC; c++) drawCellAt(r, c, rowHead + colX(c) - scrollX, top); }
     { const b = selBox();
-      if (hasRange()) { const l = rowHead + b.c1 * cellW - scrollX, t = colHead + b.r1 * cellH - scrollY, w2 = (b.c2 - b.c1 + 1) * cellW, h2 = (b.r2 - b.r1 + 1) * cellH;
+      if (hasRange()) { const l = rowHead + colX(b.c1) - scrollX, t = colHead + rowY(b.r1) - scrollY, w2 = colX(b.c2 + 1) - colX(b.c1), h2 = rowY(b.r2 + 1) - rowY(b.r1);
         ctx.fillStyle = 'rgba(31,157,99,.12)'; ctx.fillRect(l, t, w2, h2); ctx.strokeStyle = '#1F9D63'; ctx.lineWidth = 2; ctx.strokeRect(l + 1, t + 1, w2 - 2, h2 - 2); }
-      if (selR >= fR && selR <= lR && selC >= fC && selC <= lC) { const l = rowHead + selC * cellW - scrollX, t = colHead + selR * cellH - scrollY;
-        ctx.strokeStyle = '#1F9D63'; ctx.lineWidth = 2; ctx.strokeRect(l + 1, t + 1, cellW - 2, cellH - 2); }
-      const hx = rowHead + (b.c2 + 1) * cellW - scrollX, hy = colHead + (b.r2 + 1) * cellH - scrollY;   // fill handle
+      if (selR >= fR && selR <= lR && selC >= fC && selC <= lC) { const l = rowHead + colX(selC) - scrollX, t = colHead + rowY(selR) - scrollY;
+        ctx.strokeStyle = '#1F9D63'; ctx.lineWidth = 2; ctx.strokeRect(l + 1, t + 1, cwOf(selC) - 2, rhOf(selR) - 2); }
+      const hx = rowHead + colX(b.c2 + 1) - scrollX, hy = colHead + rowY(b.r2 + 1) - scrollY;   // fill handle
       if (hx > rowHead && hy > colHead && hx < w + 8 && hy < h + 8) { ctx.fillStyle = '#1F9D63'; ctx.fillRect(hx - 5, hy - 5, 9, 9); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(hx - 5.5, hy - 5.5, 10, 10); }
     }
     if (freezeOn) {   // pinned first row + first column
-      for (let c = fC; c <= lC; c++) if (c !== 0) drawCellAt(0, c, rowHead + c * cellW - scrollX, colHead);
-      for (let r = fR; r <= lR; r++) if (r !== 0) drawCellAt(r, 0, rowHead, colHead + r * cellH - scrollY);
+      for (let c = fC; c <= lC; c++) if (c !== 0) drawCellAt(0, c, rowHead + colX(c) - scrollX, colHead);
+      for (let r = fR; r <= lR; r++) if (r !== 0) drawCellAt(r, 0, rowHead, colHead + rowY(r) - scrollY);
       drawCellAt(0, 0, rowHead, colHead);
     }
     ctx.fillStyle = '#16233F'; ctx.fillRect(0, 0, w, colHead);
     ctx.textAlign = 'center';
-    for (let c = fC; c <= lC; c++) { const left = rowHead + c * cellW - scrollX;
-      if (c === selC) { ctx.fillStyle = '#E8A33D'; ctx.fillRect(left, 0, cellW, colHead); ctx.fillStyle = '#2a1d00'; } else ctx.fillStyle = '#fff';
-      ctx.fillText(E.colName(c), left + cellW / 2, colHead * .68); }
+    for (let c = fC; c <= lC; c++) { const left = rowHead + colX(c) - scrollX, cw = cwOf(c);
+      if (c === selC) { ctx.fillStyle = '#E8A33D'; ctx.fillRect(left, 0, cw, colHead); ctx.fillStyle = '#2a1d00'; } else ctx.fillStyle = '#fff';
+      ctx.fillText(E.colName(c), left + cw / 2, colHead * .68); }
     ctx.fillStyle = '#16233F'; ctx.fillRect(0, 0, rowHead, h);
-    for (let r = fR; r <= lR; r++) { const top = colHead + r * cellH - scrollY;
-      if (r === selR) { ctx.fillStyle = '#E8A33D'; ctx.fillRect(0, top, rowHead, cellH); ctx.fillStyle = '#2a1d00'; } else ctx.fillStyle = '#fff';
-      ctx.fillText(String(r + 1), rowHead / 2, top + cellH * .68); }
+    for (let r = fR; r <= lR; r++) { const top = colHead + rowY(r) - scrollY, rh = rhOf(r);
+      if (r === selR) { ctx.fillStyle = '#E8A33D'; ctx.fillRect(0, top, rowHead, rh); ctx.fillStyle = '#2a1d00'; } else ctx.fillStyle = '#fff';
+      ctx.fillText(String(r + 1), rowHead / 2, top + Math.min(rh, cellH) * .68); }
     ctx.fillStyle = '#0E1830'; ctx.fillRect(0, 0, rowHead, colHead);
     if (freezeOn) { ctx.fillStyle = 'rgba(232,163,61,.9)'; ctx.fillRect(rowHead, colHead - 2, w, 2); ctx.fillRect(rowHead - 2, colHead, 2, h); }
   }
@@ -193,7 +264,7 @@
   // ---------- grid gestures: drag-scroll, tap-select, double-tap zoom, long-press magnify ----------
   let gStartX = 0, gStartY = 0, gSX = 0, gSY = 0, gMoved = false, gScroll = false, gLong = null, gMag = false;
   let gLastTap = 0, gLastX = 0, gLastY = 0;
-  let gPinch = false, gd0 = 0, gz0 = 1, gFillDrag = false, gRangeDrag = false;
+  let gPinch = false, gd0 = 0, gz0 = 1, gFillDrag = false, gRangeDrag = false, gColResize = null, gRowResize = null;
   let gVX = 0, gVY = 0, gLastT = 0, gLastMX = 0, gLastMY = 0, gMomentum = null;
   const gDist = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
   function stopMomentum() { if (gMomentum) { cancelAnimationFrame(gMomentum); gMomentum = null; } }
@@ -214,9 +285,19 @@
     if (e.touches.length === 2) { gPinch = true; clearTimeout(gLong); gMag = false; hideLoupe(); gd0 = gDist(e.touches) || 1; gz0 = gridZoom; return; }
     const t = e.touches[0];
     gStartX = t.clientX; gStartY = t.clientY; gSX = scrollX; gSY = scrollY;
-    gMoved = false; gScroll = false; gMag = false; gFillDrag = false; gRangeDrag = false;
+    gMoved = false; gScroll = false; gMag = false; gFillDrag = false; gRangeDrag = false; gColResize = null; gRowResize = null;
     gVX = 0; gVY = 0; gLastT = performance.now(); gLastMX = t.clientX; gLastMY = t.clientY;
     const rect = canvas.getBoundingClientRect(), lx = t.clientX - rect.left, ly = t.clientY - rect.top;
+    // Resize by dragging a header border: column header (top strip) near a column's right edge, or
+    // row header (left strip) near a row's bottom edge.
+    if (ly < colHead && lx > rowHead) {
+      const c = colAtX(scrollX + lx - rowHead); const edge = rowHead + colX(c + 1) - scrollX;
+      if (Math.abs(lx - edge) <= 9) { gColResize = { c, x0: t.clientX, w0: cwOf(c) }; clearTimeout(gLong); return; }
+    }
+    if (lx < rowHead && ly > colHead) {
+      const r = rowAtY(scrollY + ly - colHead); const edge = colHead + rowY(r + 1) - scrollY;
+      if (Math.abs(ly - edge) <= 9) { gRowResize = { r, y0: t.clientY, h0: rhOf(r) }; clearTimeout(gLong); return; }
+    }
     const hp = fillHandleScreen();
     if (Math.abs(lx - hp.x) <= 24 && Math.abs(ly - hp.y) <= 24) { gFillDrag = true; return; }   // grab fill handle
     if (rangeMode) { const cell = cellAtXY(lx, ly); if (cell) { select(cell.r, cell.c); gRangeDrag = true; draw(); return; } }
@@ -228,6 +309,8 @@
         gridZoom = Math.max(0.5, Math.min(3, gz0 * gDist(e.touches) / gd0));
         applyZoom(); scrollX = clamp(scrollX, 0, maxSX()); scrollY = clamp(scrollY, 0, maxSY()); draw(); } return; }
     const t = e.touches[0];
+    if (gColResize) { if (e.cancelable) e.preventDefault(); const nw = Math.max(28, Math.round(gColResize.w0 + (t.clientX - gColResize.x0))); const s = sheet(); (s.cw || (s.cw = {}))[gColResize.c] = nw; rebuildGrid(); draw(); return; }
+    if (gRowResize) { if (e.cancelable) e.preventDefault(); const nh = Math.max(18, Math.round(gRowResize.h0 + (t.clientY - gRowResize.y0))); const s = sheet(); (s.rh || (s.rh = {}))[gRowResize.r] = nh; rebuildGrid(); draw(); return; }
     if (gFillDrag || gRangeDrag) { if (e.cancelable) e.preventDefault(); const rect = canvas.getBoundingClientRect(); const cell = cellAtXY(t.clientX - rect.left, t.clientY - rect.top); if (cell) { selR2 = cell.r; selC2 = cell.c; draw(); } return; }
     const dx = gStartX - t.clientX, dy = gStartY - t.clientY;
     if (gMag) { showLoupeAt(canvas, t.clientX, t.clientY); if (e.cancelable) e.preventDefault(); return; }
@@ -241,6 +324,8 @@
 
   canvas.addEventListener('touchend', (e) => {
     clearTimeout(gLong);
+    if (gColResize) { setStatus('Column ' + E.colName(gColResize.c) + ' width ' + Math.round(cwOf(gColResize.c)) + 'px · double-tap header to auto-fit'); gColResize = null; return; }
+    if (gRowResize) { setStatus('Row ' + (gRowResize.r + 1) + ' height ' + Math.round(rhOf(gRowResize.r)) + 'px'); gRowResize = null; return; }
     if (gFillDrag) { gFillDrag = false; doFill(); return; }
     if (gRangeDrag) { gRangeDrag = false; const b = selBox(); const n = (b.r2 - b.r1 + 1) * (b.c2 - b.c1 + 1); let sum = 0, cnt = 0;
       for (let r = b.r1; r <= b.r2; r++) for (let c = b.c1; c <= b.c2; c++) { const v = sheet().value(r, c); if (v && v.t === 'num') { sum += v.n; cnt++; } }
@@ -256,7 +341,7 @@
     }
     gLastTap = now; gLastX = x; gLastY = y;
     if (x >= rowHead && y >= colHead) {
-      const c = Math.floor((scrollX + x - rowHead) / cellW), row = Math.floor((scrollY + y - colHead) / cellH);
+      const c = colAtX(scrollX + x - rowHead), row = rowAtY(scrollY + y - colHead);
       if (row >= 0 && row < E.MAX_ROWS && c >= 0 && c < E.MAX_COLS) { select(row, c); showDVChooser(row, c); }
     }
   }, { passive: true });
@@ -274,9 +359,9 @@
     if (fI) fI.classList.toggle('on', !!f.i);
     if (fNF) fNF.value = f.nf || 'gen';
   }
-  function ensureVis() { const cl = selC * cellW, ct = selR * cellH;
-    if (cl < scrollX) scrollX = cl; else if (cl + cellW > scrollX + viewW()) scrollX = cl + cellW - viewW();
-    if (ct < scrollY) scrollY = ct; else if (ct + cellH > scrollY + viewH()) scrollY = ct + cellH - viewH();
+  function ensureVis() { const cl = colX(selC), ct = rowY(selR), cw = cwOf(selC), ch = rhOf(selR);
+    if (cl < scrollX) scrollX = cl; else if (cl + cw > scrollX + viewW()) scrollX = cl + cw - viewW();
+    if (ct < scrollY) scrollY = ct; else if (ct + ch > scrollY + viewH()) scrollY = ct + ch - viewH();
     scrollX = clamp(scrollX, 0, maxSX()); scrollY = clamp(scrollY, 0, maxSY()); }
 
   // ---------- undo ----------
