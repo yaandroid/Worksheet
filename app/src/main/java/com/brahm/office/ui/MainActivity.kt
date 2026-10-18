@@ -28,6 +28,7 @@ import com.brahm.office.R
 import com.brahm.office.files.FileAdapter
 import com.brahm.office.util.DocType
 import com.brahm.office.util.FavRepo
+import com.brahm.office.util.FileCache
 import com.brahm.office.util.FileItem
 import com.brahm.office.util.FileRepo
 import com.brahm.office.util.Recents
@@ -50,7 +51,7 @@ class MainActivity : AppCompatActivity() {
     private var favOnly = false
     private var sortMode = "DATE"
 
-    private val permLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { reload() }
+    private val permLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { reload(true) }
     private val openDoc = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { openUri(it) } }
     private val scanLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
         if (res.resultCode == RESULT_OK) {
@@ -64,7 +65,7 @@ class MainActivity : AppCompatActivity() {
         if (uri != null) {
             try { contentResolver.takePersistableUriPermission(uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } catch (_: Exception) {}
-            TreeRepo.saveTree(this, uri); tab = 1; reload()
+            TreeRepo.saveTree(this, uri); tab = 1; reload(true)
         }
     }
 
@@ -92,9 +93,10 @@ class MainActivity : AppCompatActivity() {
         list.adapter = adapter
 
         list.isNestedScrollingEnabled = false
+        all = FileCache.load(this)      // show the saved list instantly (no scan wait)
         val swipe = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipe)
         swipe.setColorSchemeColors(Color.parseColor("#E8A33D"), Color.parseColor("#1F9D63"), Color.parseColor("#2B579A"))
-        swipe.setOnRefreshListener { reload(); swipe.postDelayed({ swipe.isRefreshing = false }, 350) }
+        swipe.setOnRefreshListener { reload(true); swipe.postDelayed({ swipe.isRefreshing = false }, 350) }
 
         findViewById<Button>(R.id.selShare).setOnClickListener { shareSelected() }
         findViewById<Button>(R.id.selStar).setOnClickListener { starSelected() }
@@ -217,7 +219,7 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) { fail++ }
         }
         android.widget.Toast.makeText(this, "Copied $ok to ${dir.name} folder" + (if (fail > 0) " · $fail failed" else "") + "\n${dir.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
-        adapter.clearSelection(); reload()
+        adapter.clearSelection(); refresh()
     }
     private fun starSelected() {
         val sel = adapter.selectedItems(); if (sel.isEmpty()) return
@@ -225,7 +227,7 @@ class MainActivity : AppCompatActivity() {
         val anyNotFav = sel.any { !FavRepo.isFav(this, it.path) }
         FavRepo.setFav(this, sel.map { it.path }, anyNotFav)
         android.widget.Toast.makeText(this, if (anyNotFav) "Added to favorites" else "Removed from favorites", android.widget.Toast.LENGTH_SHORT).show()
-        adapter.clearSelection(); reload()
+        adapter.clearSelection(); reload(true)
     }
     private fun resolveRipple(): android.graphics.drawable.Drawable? {
         return try {
@@ -357,16 +359,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     @Volatile private var scanning = false
-    private fun reload() {
+    private var scannedOnce = false
+    // Cached list shows instantly; a full storage scan runs only on first load (background) or on
+    // pull-to-refresh (force). Every resume after that just re-renders the cache — no repeated scanning.
+    private fun reload(force: Boolean = false) {
         if (tab != 1) { refresh(); return }
         val tree = TreeRepo.getTree(this)
         if (!hasFullAccess() && tree == null) { refresh(); return }
+        if (!force && scannedOnce) { refresh(); return }     // use cached list, don't re-scan
         if (scanning) return
         scanning = true
         if (all.isEmpty()) { empty.visibility = View.VISIBLE; empty.text = "Loading files…" }
+        else refresh()                                       // show cached list immediately while refreshing
         Thread {
             val result = try { if (hasFullAccess()) FileRepo.scan(this) else TreeRepo.scan(this, tree!!) } catch (e: Exception) { emptyList() }
-            runOnUiThread { all = result; scanning = false; refresh() }
+            FileCache.save(this, result)
+            runOnUiThread { all = result; scanning = false; scannedOnce = true; refresh() }
         }.start()
     }
 
