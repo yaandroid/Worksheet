@@ -791,8 +791,16 @@
     for (const a of meta.annot) {
       if (a.type === 'text') drawTextAnnot(meta, a);
       else if (a.type === 'edittext') drawEditText(meta, a);
+      else if (a.type === 'image') drawImageAnnot(meta, a);
       else { if (a.pts.length === 1) strokeSeg(meta, a, a.pts[0], a.pts[0]); for (let i = 1; i < a.pts.length; i++) strokeSeg(meta, a, a.pts[i - 1], a.pts[i]); }
     }
+  }
+  // Draw a placed image/signature annotation onto the page canvas
+  function drawImageAnnot(meta, a) {
+    const k = meta.pxRatio || meta.os; const g = meta.pageCanvas.getContext('2d');
+    const paint = (im) => { g.save(); g.setTransform(k, 0, 0, k, 0, 0); try { g.drawImage(im, a.x, a.y, a.w, a.h); } catch (e) {} g.restore(); };
+    if (a._el && a._el.complete) paint(a._el);
+    else { const im = new Image(); im.onload = () => { a._el = im; paint(im); }; im.src = a.img; }
   }
   // Re-render a page's bitmap at the given zoom so text stays sharp (never below base res),
   // then repaint its annotations. Keeps ONE canvas, CSS size fixed at natural cssW (inner `zoom` scales it).
@@ -837,6 +845,13 @@
         if (str && str.trim()) { const a = { type: 'text', x: p.x, y: p.y, color: pColorEl.value, size: 18, str: str }; meta.annot.push(a); drawTextAnnot(meta, a); }
         return;
       }
+      if (editTool === 'sign') {
+        if (!pendingSig) { setStatus('Tap ✍ Sign and draw your signature first'); return; }
+        const w = pendingSig.w, h = pendingSig.h;
+        const a = { type: 'image', x: p.x - w / 2, y: p.y - h / 2, w, h, img: pendingSig.img };
+        meta.annot.push(a); drawImageAnnot(meta, a); setStatus('Signature placed · tap again to add more, then Save PDF');
+        return;
+      }
       drawing = true; curStroke = { type: editTool, color: pColorEl.value, w: +pSizeEl.value * (editTool === 'hl' ? 3 : 1), pts: [p] };
       meta.annot.push(curStroke); strokeSeg(meta, curStroke, p, p);
     }, { passive: false });
@@ -869,6 +884,44 @@
     if (m && m.annot.length) { m.annot.pop(); redrawPage(m); }
   };
   document.getElementById('pClear').onclick = () => { pageMeta.forEach(m => { if (m.annot.length) { m.annot = []; redrawPage(m); } }); setStatus('Annotations cleared'); };
+  // ---------- Signature / stamp ----------
+  let pendingSig = null;
+  (function signModule() {
+    const modal = document.getElementById('signmodal'); if (!modal) return;
+    const cv = document.getElementById('sigcanvas'), g = cv.getContext('2d');
+    const colorEl = document.getElementById('sigColor');
+    let drawingSig = false, last = null;
+    function pos(e) { const r = cv.getBoundingClientRect(); const t = e.touches ? e.touches[0] : e; return { x: (t.clientX - r.left) * cv.width / r.width, y: (t.clientY - r.top) * cv.height / r.height }; }
+    function down(e) { drawingSig = true; last = pos(e); e.preventDefault(); }
+    function move(e) { if (!drawingSig) return; const p = pos(e); g.strokeStyle = colorEl.value; g.lineWidth = 2.6; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); g.moveTo(last.x, last.y); g.lineTo(p.x, p.y); g.stroke(); last = p; e.preventDefault(); }
+    function up() { drawingSig = false; }
+    cv.addEventListener('pointerdown', down); cv.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+    cv.addEventListener('touchstart', down, { passive: false }); cv.addEventListener('touchmove', move, { passive: false }); window.addEventListener('touchend', up);
+    function openModal() { g.clearRect(0, 0, cv.width, cv.height); modal.classList.add('show'); }
+    document.getElementById('pSign').onclick = openModal;
+    document.getElementById('signClose').onclick = () => modal.classList.remove('show');
+    document.getElementById('sigClear').onclick = () => g.clearRect(0, 0, cv.width, cv.height);
+    document.getElementById('sigUse').onclick = () => {
+      // crop to the ink bounding box so the stamp is tight
+      let minx = cv.width, miny = cv.height, maxx = 0, maxy = 0, any = false;
+      try { const d = g.getImageData(0, 0, cv.width, cv.height).data;
+        for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) { if (d[(y * cv.width + x) * 4 + 3] > 10) { any = true; if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y; } }
+      } catch (e) { any = true; minx = 0; miny = 0; maxx = cv.width - 1; maxy = cv.height - 1; }
+      if (!any) { setStatus('Draw your signature first'); return; }
+      const pad = 6; minx = Math.max(0, minx - pad); miny = Math.max(0, miny - pad); maxx = Math.min(cv.width - 1, maxx + pad); maxy = Math.min(cv.height - 1, maxy + pad);
+      const bw = maxx - minx + 1, bh = maxy - miny + 1;
+      const crop = document.createElement('canvas'); crop.width = bw; crop.height = bh;
+      crop.getContext('2d').drawImage(cv, minx, miny, bw, bh, 0, 0, bw, bh);
+      const dataUrl = crop.toDataURL('image/png');
+      const placeW = 150, placeH = Math.max(28, Math.round(placeW * bh / bw));
+      pendingSig = { img: dataUrl, w: placeW, h: placeH };
+      modal.classList.remove('show');
+      if (!editMode) toggleEdit(true);
+      editTool = 'sign'; document.querySelectorAll('.ptool').forEach(x => x.classList.remove('on'));
+      setStatus('Signature ready · tap on the page to place it, then Save PDF');
+    };
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('show'); });
+  })();
   function hexRgb(h) { const n = parseInt(h.replace('#', ''), 16); return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 }; }
   // Paint one annotation onto any 2D context at scale k (k = canvasPx per CSS px).
   function paintAnnotOn(g, k, a) {
@@ -879,6 +932,8 @@
     } else if (a.type === 'text') {
       g.globalAlpha = 1; g.fillStyle = a.color; g.textBaseline = 'top'; g.font = a.size + 'px sans-serif';
       (a.str || '').split('\n').forEach((ln, i) => g.fillText(ln, a.x, a.y + i * a.size * 1.2));
+    } else if (a.type === 'image') {
+      g.globalAlpha = 1; if (a._el && a._el.complete) { try { g.drawImage(a._el, a.x, a.y, a.w, a.h); } catch (e) {} }
     } else {
       g.globalAlpha = a.type === 'hl' ? 0.3 : 1; g.strokeStyle = a.color; g.lineWidth = a.w; g.lineCap = 'round'; g.lineJoin = 'round';
       const p = a.pts || []; if (p.length) { g.beginPath(); g.moveTo(p[0].x, p[0].y); for (let i = 1; i < p.length; i++) g.lineTo(p[i].x, p[i].y); g.stroke(); }
@@ -920,7 +975,7 @@
         const X = (cx) => ox + cx * fx;                 // CSS-x → PDF-x
         const Y = (cy) => oy + bh - cy * fy;            // CSS-top-y → PDF-y (flip)
         for (const a of meta.annot) {
-          const c = hexRgb(a.color);
+          const c = hexRgb(a.color || '#000000');
           if (a.type === 'edittext') {
             const bgc = hexRgb(a.bg || '#ffffff'); const pad = a.size * 0.3;   // cover ascenders/descenders fully
             pg.drawRectangle({ x: X(a.x - 2), y: Y(a.y + a.h + pad), width: (a.w + 4) * fx, height: (a.h + 2 * pad) * fy, color: rgb(bgc.r, bgc.g, bgc.b) });
@@ -943,6 +998,10 @@
             }
           } else if (a.type === 'text') {
             (a.str || '').split('\n').forEach((ln, j) => drawTx(pg, ln, { x: X(a.x), y: Y(a.y + a.size + j * a.size * 1.2), size: a.size * fy, color: rgb(c.r, c.g, c.b) }));
+          } else if (a.type === 'image' && a.img) {
+            try { const png = await doc.embedPng(dataUrlToU8(a.img)); pg.drawImage(png, { x: X(a.x), y: Y(a.y + a.h), width: a.w * fx, height: a.h * fy }); } catch (e) {}
+          } else if (a.type === 'image') {
+            // nothing to draw
           } else {
             const opt = { thickness: a.w * fx, color: rgb(c.r, c.g, c.b), opacity: a.type === 'hl' ? 0.32 : 1, lineCap: LineCapStyle.Round };
             for (let j = 1; j < a.pts.length; j++) pg.drawLine({ start: { x: X(a.pts[j - 1].x), y: Y(a.pts[j - 1].y) }, end: { x: X(a.pts[j].x), y: Y(a.pts[j].y) }, ...opt });
@@ -1023,6 +1082,36 @@
         const out = await cur.saveAsBase64(); pagesmodal.classList.remove('show'); reopenPdfB64(out, pdfName.replace(/\.pdf$/i, '') + '-img.pdf'); setStatus('Image added');
       }
     } catch (e) { setStatus('Failed: ' + e.message); }
+    showLoading(false);
+  };
+  document.getElementById('pgWmark').onclick = async () => {
+    if (!pdfBytes) { setStatus('Open a PDF first'); return; }
+    const txt = prompt('Watermark text:', 'BRAHM'); if (!txt) return;
+    showLoading(true); setStatus('Adding watermark…');
+    try {
+      const { PDFDocument, rgb, degrees, StandardFonts } = PDFLib;
+      const doc = await PDFDocument.load(pdfBytes, loadOpts(pdfPassword));
+      const uni = await embedUniFont(doc); const font = uni || await doc.embedFont(StandardFonts.Helvetica);
+      for (const pg of doc.getPages()) {
+        const { width, height } = pg.getSize(); const size = Math.min(width, height) * 0.13;
+        let tw = size * txt.length * 0.5; try { tw = font.widthOfTextAtSize(txt, size); } catch (e) {}
+        try { pg.drawText(txt, { x: width / 2 - tw / 2 * 0.7, y: height / 2 - size / 2, size, font, color: rgb(0.6, 0.6, 0.6), opacity: 0.22, rotate: degrees(45) }); } catch (e) {}
+      }
+      const out = await doc.saveAsBase64(); pagesmodal.classList.remove('show'); reopenPdfB64(out, (pdfName || 'document').replace(/\.pdf$/i, '') + '-wm.pdf'); setStatus('Watermark added — tap Save PDF to keep');
+    } catch (e) { setStatus('Watermark failed: ' + e.message); }
+    showLoading(false);
+  };
+  document.getElementById('pgNums').onclick = async () => {
+    if (!pdfBytes) { setStatus('Open a PDF first'); return; }
+    showLoading(true); setStatus('Adding page numbers…');
+    try {
+      const { PDFDocument, rgb, StandardFonts } = PDFLib;
+      const doc = await PDFDocument.load(pdfBytes, loadOpts(pdfPassword));
+      const uni = await embedUniFont(doc); const font = uni || await doc.embedFont(StandardFonts.Helvetica);
+      const pages = doc.getPages();
+      pages.forEach((pg, i) => { const { width } = pg.getSize(); const label = (i + 1) + ' / ' + pages.length; const size = 10; let tw = size * label.length * 0.5; try { tw = font.widthOfTextAtSize(label, size); } catch (e) {} try { pg.drawText(label, { x: width / 2 - tw / 2, y: 16, size, font, color: rgb(0.3, 0.3, 0.3) }); } catch (e) {} });
+      const out = await doc.saveAsBase64(); pagesmodal.classList.remove('show'); reopenPdfB64(out, (pdfName || 'document').replace(/\.pdf$/i, '') + '-n.pdf'); setStatus('Page numbers added — tap Save PDF to keep');
+    } catch (e) { setStatus('Page numbers failed: ' + e.message); }
     showLoading(false);
   };
   document.getElementById('pgExport').onclick = async () => {
@@ -1457,10 +1546,34 @@
         + '.swrap{height:auto}'
         + '.slide.txt{height:auto !important;transform:none !important;max-width:820px;padding:30px 38px;min-height:360px}'
         + '.slide.txt h2{font-size:24px;color:#16233F;margin:.1em 0 .5em;border-bottom:3px solid #E8A33D;padding-bottom:8px}.slide.txt p{font-size:17px;line-height:1.5}'
-        + '.snum{font-size:12px;color:#cdd3dd;margin-bottom:6px}</style><meta name="viewport" content="width=device-width,initial-scale=1">';
-      // wrap: the scaled slide needs its wrapper height to match the scaled height
-      const script = '<script>document.querySelectorAll(".swrap").forEach(function(w){var s=w.querySelector(".slide");if(!s||s.classList.contains("txt"))return;var sc=Math.min(1,(window.innerWidth-24)/' + CW + ');w.style.height=(s.offsetHeight*sc+6)+"px";});<\/script>';
-      showHtml(css + body + script); setStatus('PowerPoint · ' + slideNames.length + ' slides · ' + name);
+        + '.snum{font-size:12px;color:#cdd3dd;margin-bottom:6px}'
+        + '#presentBtn{position:fixed;right:14px;bottom:14px;z-index:50;background:#1F9D63;color:#fff;border:0;border-radius:24px;padding:11px 18px;font-size:15px;font-weight:bold;box-shadow:0 3px 12px rgba(0,0,0,.4);cursor:pointer}'
+        + '#stage{position:fixed;inset:0;background:#000;z-index:100;display:none;align-items:center;justify-content:center}'
+        + '#stage.on{display:flex}#stage .holder{transform-origin:center center}'
+        + '#stage .pn{position:fixed;top:12px;right:16px;color:#fff;font-size:14px;opacity:.75}'
+        + '#stage .x{position:fixed;top:10px;left:14px;color:#fff;font-size:26px;cursor:pointer;opacity:.8;background:none;border:0}'
+        + '#stage .nav{position:fixed;top:0;bottom:0;width:38%;cursor:pointer}#stage .nav.l{left:0}#stage .nav.r{right:0}</style><meta name="viewport" content="width=device-width,initial-scale=1">';
+      // Scaled-wrapper heights + full-screen Present mode (one slide at a time, tap/arrow/swipe).
+      const script = '<script>(function(){'
+        + 'var CW=' + CW + ',CH=' + CH.toFixed(0) + ';'
+        + 'document.querySelectorAll(".swrap").forEach(function(w){var s=w.querySelector(".slide");if(!s||s.classList.contains("txt"))return;var sc=Math.min(1,(window.innerWidth-24)/CW);w.style.height=(s.offsetHeight*sc+6)+"px";});'
+        + 'var slides=[].slice.call(document.querySelectorAll(".slide")).filter(function(s){return !s.classList.contains("txt");});'
+        + 'if(!slides.length)return;'
+        + 'var btn=document.createElement("button");btn.id="presentBtn";btn.textContent="▶ Present";document.body.appendChild(btn);'
+        + 'var stage=document.createElement("div");stage.id="stage";stage.innerHTML="<button class=x>&times;</button><div class=pn></div><div class=holder></div><div class=\\"nav l\\"></div><div class=\\"nav r\\"></div>";document.body.appendChild(stage);'
+        + 'var holder=stage.querySelector(".holder"),pn=stage.querySelector(".pn"),cur=0;'
+        + 'function fit(){var sc=Math.min((window.innerWidth)/CW,(window.innerHeight)/CH);holder.style.transform="scale("+sc+")";holder.style.width=CW+"px";holder.style.height=CH+"px";}'
+        + 'function show(i){cur=Math.max(0,Math.min(slides.length-1,i));holder.innerHTML="";var c=slides[cur].cloneNode(true);c.style.transform="none";c.style.margin="0";c.style.boxShadow="none";holder.appendChild(c);pn.textContent=(cur+1)+" / "+slides.length;fit();}'
+        + 'function open(){stage.classList.add("on");show(0);try{if(stage.requestFullscreen)stage.requestFullscreen();}catch(e){}}'
+        + 'function close(){stage.classList.remove("on");try{if(document.fullscreenElement)document.exitFullscreen();}catch(e){}}'
+        + 'btn.onclick=open;stage.querySelector(".x").onclick=close;'
+        + 'stage.querySelector(".nav.l").onclick=function(){show(cur-1);};stage.querySelector(".nav.r").onclick=function(){show(cur+1);};'
+        + 'window.addEventListener("keydown",function(e){if(!stage.classList.contains("on"))return;if(e.key==="ArrowRight"||e.key===" ")show(cur+1);else if(e.key==="ArrowLeft")show(cur-1);else if(e.key==="Escape")close();});'
+        + 'window.addEventListener("resize",function(){if(stage.classList.contains("on"))fit();});'
+        + 'var sx=0;stage.addEventListener("touchstart",function(e){sx=e.touches[0].clientX;},{passive:true});'
+        + 'stage.addEventListener("touchend",function(e){var dx=e.changedTouches[0].clientX-sx;if(Math.abs(dx)>40)show(cur+(dx<0?1:-1));},{passive:true});'
+        + '})();<\/script>';
+      showHtml(css + body + script); setStatus('PowerPoint · ' + slideNames.length + ' slides · ' + name + ' · tap ▶ Present');
     } catch (e) { showText('Could not render ' + name); }
     showLoading(false);
   }
@@ -1885,5 +1998,92 @@
   }
 
   applyZoom(); renderTabs(); showSheet(); select(0, 0);
+  // ---------- Universal Export to PDF + Print ----------
+  async function makeTextPdf(lines) {
+    const { PDFDocument, rgb, StandardFonts } = PDFLib;
+    const doc = await PDFDocument.create();
+    const uni = await embedUniFont(doc);
+    const font = uni || await doc.embedFont(StandardFonts.Helvetica);
+    const fb = uni ? await doc.embedFont(StandardFonts.Helvetica) : font;
+    const W = 595, H = 842, M = 48, size = 11, lh = size * 1.55, maxW = W - 2 * M;
+    let page = doc.addPage([W, H]), y = H - M;
+    const measure = (t, f) => { try { return f.widthOfTextAtSize(t, size); } catch (e) { return ('' + t).length * size * 0.5; } };
+    const put = (t) => { if (y < M) { page = doc.addPage([W, H]); y = H - M; } try { page.drawText(t, { x: M, y, size, font }); } catch (e) { try { page.drawText(t, { x: M, y, size, font: fb }); } catch (e2) {} } y -= lh; };
+    for (const raw of lines) {
+      if (!('' + raw).trim()) { y -= lh; continue; }
+      const words = ('' + raw).split(/\s+/); let cur = '';
+      for (const w of words) { const t = cur ? cur + ' ' + w : w; if (measure(t, font) > maxW && cur) { put(cur); cur = w; } else cur = t; }
+      if (cur) put(cur);
+    }
+    return await doc.saveAsBase64();
+  }
+  function sheetUsedBounds(s) { let mr = 0, mc = 0; for (const k of s.cells.keys()) { const r = Math.floor(k / E.MAX_COLS), c = k % E.MAX_COLS; if (r > mr) mr = r; if (c > mc) mc = c; } return { mr, mc }; }
+  async function makeSheetPdf(s) {
+    const { PDFDocument, rgb, StandardFonts } = PDFLib;
+    const doc = await PDFDocument.create();
+    const uni = await embedUniFont(doc);
+    const font = uni || await doc.embedFont(StandardFonts.Helvetica);
+    const fb = uni ? await doc.embedFont(StandardFonts.Helvetica) : font;
+    const { mr, mc } = sheetUsedBounds(s);
+    const W = 842, H = 595, M = 30, rowH = 16, colW = 84, size = 9;       // landscape
+    const perPageCols = Math.max(1, Math.floor((W - 2 * M - 28) / colW));   // 28 = row-number col
+    const perPageRows = Math.max(1, Math.floor((H - 2 * M - rowH) / rowH));
+    const drawTxt = (pg, t, x, y, col) => { try { pg.drawText(('' + t).slice(0, 18), { x, y, size, font, color: col || rgb(0.1, 0.1, 0.1) }); } catch (e) { try { pg.drawText(('' + t).slice(0, 18), { x, y, size, font: fb, color: col || rgb(0.1, 0.1, 0.1) }); } catch (e2) {} } };
+    for (let c0 = 0; c0 <= mc; c0 += perPageCols) {
+      for (let r0 = 0; r0 <= mr; r0 += perPageRows) {
+        const pg = doc.addPage([W, H]);
+        const c1 = Math.min(mc, c0 + perPageCols - 1), r1 = Math.min(mr, r0 + perPageRows - 1);
+        const x0 = M, y0 = H - M;
+        // header row (column letters)
+        pg.drawRectangle({ x: x0, y: y0 - rowH, width: 28 + (c1 - c0 + 1) * colW, height: rowH, color: rgb(0.086, 0.137, 0.247) });
+        for (let c = c0; c <= c1; c++) drawTxt(pg, E.colName(c), x0 + 28 + (c - c0) * colW + 4, y0 - rowH + 4, rgb(1, 1, 1));
+        for (let r = r0; r <= r1; r++) {
+          const y = y0 - rowH - (r - r0 + 1) * rowH;
+          drawTxt(pg, (r + 1), x0 + 4, y + 4, rgb(0.4, 0.45, 0.5));      // row number
+          for (let c = c0; c <= c1; c++) { const v = s.display(r, c); if (v !== '' && v != null) drawTxt(pg, v, x0 + 28 + (c - c0) * colW + 4, y + 4); }
+        }
+        // grid lines
+        pg.drawRectangle({ x: x0, y: y0 - rowH - (r1 - r0 + 1) * rowH, width: 28 + (c1 - c0 + 1) * colW, height: (r1 - r0 + 2) * rowH, borderColor: rgb(0.8, 0.82, 0.86), borderWidth: 0.5 });
+        for (let c = c0; c <= c1 + 1; c++) { const x = x0 + 28 + (c - c0) * colW; pg.drawLine({ start: { x, y: y0 }, end: { x, y: y0 - rowH - (r1 - r0 + 1) * rowH }, thickness: 0.4, color: rgb(0.82, 0.84, 0.88) }); }
+      }
+    }
+    if (mr === 0 && mc === 0 && !s.display(0, 0)) doc.addPage([W, H]);
+    return await doc.saveAsBase64();
+  }
+  function slidesText() {
+    try { const d = htmlview.contentDocument; if (!d) return null; const sl = d.querySelectorAll('.slide'); if (!sl.length) return null;
+      const out = []; sl.forEach((s, i) => { out.push('Slide ' + (i + 1)); ('' + s.innerText).split('\n').forEach(l => out.push(l)); out.push(''); }); return out; } catch (e) { return null; }
+  }
+  async function buildCurrentPdf() {
+    if (currentView === 'pdf' && pdfBytes) return bytesToB64(pdfBytes);        // already a PDF
+    if (currentView === 'text') return await makeTextPdf(('' + textview.value).split('\n'));
+    if (currentView === 'word') { const p = wordview.querySelector('.page'); return await makeTextPdf(('' + (p ? p.innerText : '')).split('\n')); }
+    if (currentView === 'sheet') return await makeSheetPdf(sheet());
+    if (currentView === 'html') { const t = slidesText(); if (t) return await makeTextPdf(t); }
+    return null;
+  }
+  function currentDocName() {
+    if (currentView === 'pdf') return (pdfName || 'document').replace(/\.pdf$/i, '');
+    if (currentView === 'text') return (textName || 'document').replace(/\.\w+$/, '');
+    if (currentView === 'word') return (wordName || 'document').replace(/\.\w+$/, '');
+    return 'document';
+  }
+  document.getElementById('btnToPdf').onclick = async () => {
+    showLoading(true); setStatus('Exporting to PDF…');
+    try { const b64 = await buildCurrentPdf(); if (!b64) { setStatus('Nothing to export'); showLoading(false); return; }
+      savePdfOut(currentDocName() + '.pdf', b64); setStatus('Exported ' + currentDocName() + '.pdf');
+    } catch (e) { setStatus('Export failed: ' + e.message); }
+    showLoading(false);
+  };
+  document.getElementById('btnPrint').onclick = async () => {
+    showLoading(true); setStatus('Preparing print…');
+    try {
+      const b64 = await buildCurrentPdf(); if (!b64) { setStatus('Nothing to print'); showLoading(false); return; }
+      if (AB && AB.printPdf) { AB.printPdf(currentDocName() + '.pdf', b64); setStatus('Opening printer…'); }
+      else { const arr = b64ToBytes(b64); const url = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' })); const w = window.open(url); if (w) { w.onload = () => { try { w.print(); } catch (e) {} }; setStatus('Print dialog opened'); } else setStatus('Allow pop-ups to print, or use Export PDF'); }
+    } catch (e) { setStatus('Print failed: ' + e.message); }
+    showLoading(false);
+  };
+
   if (AB && AB.ready) AB.ready();
 })();

@@ -88,6 +88,8 @@
     <button class="btn accent" id="btnSaveXlsx">Save .xlsx</button>
     <button class="btn" id="btnSaveCsv">.csv</button>
     <button class="btn" id="btnShare" title="Share">↗ Share</button>
+    <button class="btn" id="btnToPdf" title="Export to PDF">⤓ PDF</button>
+    <button class="btn" id="btnPrint" title="Print">🖨 Print</button>
     <button class="btn" id="btnImages" style="display:none">Images</button>
     <div class="zoombar" id="zoombar">
       <input id="pdfSearch" class="pdfsearch pdfonly" placeholder="Find in PDF" spellcheck="false" autocomplete="off">
@@ -109,6 +111,7 @@
     <button class="fbtn ptool" data-tool="hl">🖍 Mark</button>
     <button class="fbtn ptool" data-tool="text">T Text</button>
     <button class="fbtn ptool" data-tool="edittext">✎T Edit text</button>
+    <button class="fbtn" id="pSign">✍ Sign</button>
     <label class="fbtn">Color<input type="color" id="pColor" value="#d64541"></label>
     <select id="pSize" class="fsel">
       <option value="2">Thin</option>
@@ -238,6 +241,20 @@
     </div>
   </div>
 
+  <div class="chartmodal" id="signmodal">
+    <div class="chartbox" style="max-width:520px">
+      <div class="charthead"><span>Draw your signature</span><div class="chartbtns"><button class="fbtn" id="signClose">✕</button></div></div>
+      <div style="padding:12px">
+        <canvas id="sigcanvas" width="460" height="180" style="width:100%;height:180px;border:2px dashed #c7ccd6;border-radius:10px;background:#fff;touch-action:none;display:block"></canvas>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <label class="fbtn">Ink<input type="color" id="sigColor" value="#16233F"></label>
+          <button class="fbtn" id="sigClear">Clear</button>
+          <button class="fbtn accent" id="sigUse" style="margin-left:auto">Use ✓ — then tap on the page</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="chartmodal" id="pagesmodal">
     <div class="chartbox">
       <div class="charthead"><span id="pageshead">Pages</span><div class="chartbtns"><button class="fbtn" id="pagesClose">✕</button></div></div>
@@ -245,6 +262,8 @@
         <button class="fbtn" id="pgMerge">➕ Merge PDF</button>
         <button class="fbtn" id="pgImages">🖼 Images→PDF</button>
         <button class="fbtn" id="pgExport">📤 Export images</button>
+        <button class="fbtn" id="pgWmark">💧 Watermark</button>
+        <button class="fbtn" id="pgNums">#️⃣ Page numbers</button>
         <button class="fbtn accent" id="pgSave">💾 Save PDF</button>
       </div>
       <div id="pglist" style="overflow:auto;max-height:60vh;padding:8px"></div>

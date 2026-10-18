@@ -213,6 +213,35 @@ class DocActivity : AppCompatActivity() {
                 runOnUiThread { try { startActivity(Intent.createChooser(i, "Share")) } catch (_: Exception) {} }
             } catch (_: Exception) {}
         }
+        /** Print a PDF (base64) via the Android print framework. */
+        @JavascriptInterface fun printPdf(name: String, base64: String) {
+            try {
+                val data = Base64.decode(base64, Base64.DEFAULT)
+                val safe = (if (name.isBlank()) "document.pdf" else name).replace("/", "_").replace("\\", "_")
+                val dir = java.io.File(cacheDir, "print"); dir.mkdirs()
+                val f = java.io.File(dir, safe); f.writeBytes(data)
+                runOnUiThread {
+                    try {
+                        val pm = getSystemService(android.content.Context.PRINT_SERVICE) as android.print.PrintManager
+                        val adapter = object : android.print.PrintDocumentAdapter() {
+                            override fun onLayout(old: android.print.PrintAttributes?, neu: android.print.PrintAttributes?, cancel: android.os.CancellationSignal?, cb: LayoutResultCallback?, extras: android.os.Bundle?) {
+                                if (cancel?.isCanceled == true) { cb?.onLayoutCancelled(); return }
+                                val info = android.print.PrintDocumentInfo.Builder(safe)
+                                    .setContentType(android.print.PrintDocumentInfo.CONTENT_TYPE_DOCUMENT).build()
+                                cb?.onLayoutFinished(info, true)
+                            }
+                            override fun onWrite(pages: Array<out android.print.PageRange>?, dest: android.os.ParcelFileDescriptor?, cancel: android.os.CancellationSignal?, cb: WriteResultCallback?) {
+                                try {
+                                    java.io.FileInputStream(f).use { ins -> java.io.FileOutputStream(dest!!.fileDescriptor).use { outs -> ins.copyTo(outs) } }
+                                    cb?.onWriteFinished(arrayOf(android.print.PageRange.ALL_PAGES))
+                                } catch (e: Exception) { cb?.onWriteFailed(e.message) }
+                            }
+                        }
+                        pm.print(safe, adapter, null)
+                    } catch (_: Exception) {}
+                }
+            } catch (_: Exception) {}
+        }
         /** On-device OCR of a PNG (base64). lang: "hi" → Devanagari, else Latin. */
         @JavascriptInterface fun ocr(base64Png: String, lang: String) {
             try {
