@@ -7,28 +7,26 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe archive.org + jitpack for ffmpeg-kit aar
+      - name: Discover maintained ffmpeg-kit AAR source
         run: |
-          mkdir -p /tmp/out; P=/tmp/out/probe.txt; : > $P
-          echo "== Wayback availability API ==" >> $P
-          for v in 6.0-2 6.0.LTS 5.1.LTS 5.1 4.5.1.LTS; do
-            orig="https://repo1.maven.org/maven2/com/arthenica/ffmpeg-kit-full/$v/ffmpeg-kit-full-$v.aar"
-            echo "-- v=$v --" >> $P
-            curl -s "https://archive.org/wayback/available?url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$orig")" >> $P; echo "" >> $P
-          done
-          echo "== direct wayback id_ fetch HEAD codes ==" >> $P
-          for v in 6.0-2 6.0.LTS; do
-            u="https://web.archive.org/web/2id_/https://repo1.maven.org/maven2/com/arthenica/ffmpeg-kit-full/$v/ffmpeg-kit-full-$v.aar"
-            echo "$(curl -s -o /dev/null -w '%{http_code} size=%{size_download}' -L "$u")  v=$v" >> $P
-          done
-          echo "== jitpack fork candidates (metadata) ==" >> $P
-          for ga in "com.github.tanersener/ffmpeg-kit" "com.github.arthenica/ffmpeg-kit"; do
-            owner=${ga%%/*}; name=${ga##*/}
-            echo "$(curl -s -o /dev/null -w '%{http_code}' "https://jitpack.io/api/builds/$ga")  $ga" >> $P
+          mkdir -p /tmp/out /tmp/w; P=/tmp/out/probe.txt; : > $P
+          for pkg in ffmpeg_kit_flutter_new ffmpeg_kit_flutter; do
+            echo "===== $pkg =====" >> $P
+            url=$(curl -s "https://pub.dev/api/packages/$pkg" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['latest']['archive_url'])" 2>/dev/null)
+            echo "archive: $url" >> $P
+            [ -z "$url" ] && continue
+            curl -sL "$url" -o /tmp/w/$pkg.tar.gz
+            mkdir -p /tmp/w/$pkg && tar xzf /tmp/w/$pkg.tar.gz -C /tmp/w/$pkg 2>/dev/null
+            echo "--- android/build.gradle ---" >> $P
+            find /tmp/w/$pkg -path "*android*build.gradle*" -exec cat {} \; 2>/dev/null | grep -iE "maven|url|implementation|arthenica|aar|http" | head -30 >> $P
+            echo "--- any .aar/.so bundled? ---" >> $P
+            find /tmp/w/$pkg -iname "*.aar" -o -iname "*.so" 2>/dev/null | head >> $P
+            echo "--- gradle/properties repos ---" >> $P
+            grep -rniE "maven.*url|https?://[^ \"')]+" /tmp/w/$pkg/android 2>/dev/null | grep -iE "aar|maven|arthenica|github|storage|repo" | head -20 >> $P
           done
       - name: Publish probe
         if: always()
         run: |
           cd /tmp/out; git init -q; git checkout -b ci-output; git add -A
-          git -c user.email=ci@brahm -c user.name=CI commit -q -m "probe3 ${GITHUB_SHA}"
+          git -c user.email=ci@brahm -c user.name=CI commit -q -m "probe4 ${GITHUB_SHA}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-output
