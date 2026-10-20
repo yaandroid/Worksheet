@@ -26,6 +26,10 @@ class EditActivity : AppCompatActivity() {
         b.etWords.setText(wordsToText(Session.words))
         b.tvHint.text = "Har line: start  end  text  —  galat shabd ya second yahin theek karo"
         b.btnRender.setOnClickListener { render() }
+        b.btnTimeline.setOnClickListener {
+            Session.words = textToWords(b.etWords.text.toString()).toMutableList()
+            startActivity(android.content.Intent(this, TimelineActivity::class.java))
+        }
         b.btnShare.setOnClickListener { share() }
     }
 
