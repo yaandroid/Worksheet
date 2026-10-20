@@ -97,7 +97,8 @@ class MainActivity : AppCompatActivity() {
             fontChoice = when (b.spFont.selectedItemPosition) { 1 -> "Anton"; 2 -> "Bebas Neue"; else -> "" },
             textBg = b.swTextBg.isChecked,
             textBgColor = b.etTextBgColor.text.toString().ifBlank { "#000000" },
-            highlight = b.etHighlight.text.toString().trim())
+            highlight = b.etHighlight.text.toString().trim(),
+            pip = b.swPip.isChecked)
         val manual = b.etTranscript.text.toString()
         val apiKey = b.etGroqKey.text.toString()
         setBusy(true, "Transcribing…", 20)

@@ -28,7 +28,8 @@ class AutoEditEngine(private val ctx: Context) {
         val fontChoice: String = "",       // caption font (English): "", Anton, Bebas Neue
         val textBg: Boolean = false,       // caption background box
         val textBgColor: String = "#000000",
-        val highlight: String = ""         // override theme highlight colour
+        val highlight: String = "",        // override theme highlight colour
+        val pip: Boolean = false           // b-roll fullscreen + speaker circle (PiP)
     )
 
     interface Listener {
@@ -97,17 +98,35 @@ class AutoEditEngine(private val ctx: Context) {
             } else {
                 fc.append("[0:v]scale=$W:$H:force_original_aspect_ratio=increase,crop=$W:$H,$gradeZoom[$cur];")
             }
-            val box = 640; val bx = (W - box) / 2; val by = 250
-            for ((n, p) in broll.withIndex()) {
-                inputs.add(p.imagePath)
-                val idx = n + 1
-                val lab = "im$n"; val nxt = "o$n"
-                fc.append(
-                    "[$idx:v]scale=$box:$box:force_original_aspect_ratio=increase,crop=$box:$box," +
-                        "format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':" +
-                        "a='if(gt(hypot(X-$box/2,Y-$box/2),$box/2),0,255)'[$lab];")
-                fc.append("[$cur][$lab]overlay=x=$bx:y=$by:enable='between(t,${p.start},${p.end})'[$nxt];")
-                cur = nxt
+            if (opt.pip && broll.isNotEmpty()) {
+                // PiP: b-roll fullscreen + speaker as a circle
+                val n = broll.size; val diam = 360
+                fc.append("[$cur]split=2[bmain][bpsrc];")
+                fc.append("[bpsrc]scale=$diam:$diam:force_original_aspect_ratio=increase,crop=$diam:$diam," +
+                    "format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':" +
+                    "a='if(gt(hypot(X-$diam/2,Y-$diam/2),$diam/2),0,255)'[spk];")
+                fc.append("[spk]split=$n" + (0 until n).joinToString("") { "[spk$it]" } + ";")
+                cur = "bmain"
+                for ((i, p) in broll.withIndex()) {
+                    inputs.add(p.imagePath); val idx = inputs.size - 1
+                    fc.append("[$idx:v]scale=$W:$H:force_original_aspect_ratio=increase,crop=$W:$H[imf$i];")
+                    fc.append("[$cur][imf$i]overlay=enable='between(t,${p.start},${p.end})'[of$i];")
+                    fc.append("[of$i][spk$i]overlay=x=${(W - diam) / 2}:y=${H - diam - 240}:" +
+                        "enable='between(t,${p.start},${p.end})'[op$i];")
+                    cur = "op$i"
+                }
+            } else {
+                val box = 640; val bx = (W - box) / 2; val by = 250
+                for ((n, p) in broll.withIndex()) {
+                    inputs.add(p.imagePath); val idx = n + 1
+                    val lab = "im$n"; val nxt = "o$n"
+                    fc.append(
+                        "[$idx:v]scale=$box:$box:force_original_aspect_ratio=increase,crop=$box:$box," +
+                            "format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':" +
+                            "a='if(gt(hypot(X-$box/2,Y-$box/2),$box/2),0,255)'[$lab];")
+                    fc.append("[$cur][$lab]overlay=x=$bx:y=$by:enable='between(t,${p.start},${p.end})'[$nxt];")
+                    cur = nxt
+                }
             }
             // captions + branding on top
             fc.append("[$cur]subtitles='${ass.absolutePath}':fontsdir='${fonts.absolutePath}'," +

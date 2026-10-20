@@ -57,7 +57,9 @@
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/swAutoTheme" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="AI auto-theme" android:textColor="#EEF2FF"/>
-            <View android:layout_width="0dp" android:layout_weight="1" android:layout_height="1dp"/>
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/swPip" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="PiP (b-roll fullscreen)" android:textColor="#EEF2FF"/>
         </LinearLayout>
 
         <TextView style="@style/Lbl" android:text="Background remove (none / green screen / AI)"/>
