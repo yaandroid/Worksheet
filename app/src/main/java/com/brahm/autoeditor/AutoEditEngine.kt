@@ -20,7 +20,8 @@ class AutoEditEngine(private val ctx: Context) {
         val pitch: Double = 0.0,
         val brand: String = "BRAHM",
         val tag: String = "HOMEOPATHY",
-        val aiMark: Boolean = true
+        val aiMark: Boolean = true,
+        val music: Boolean = false
     )
 
     interface Listener {
@@ -63,12 +64,12 @@ class AutoEditEngine(private val ctx: Context) {
     }
 
     fun render(input: String, words: List<Word>, opt: Options,
-               broll: List<Broll.Placed>, listener: Listener) {
+               broll: List<Broll.Placed>, keywords: List<Keywords.Hit>, listener: Listener) {
         try {
             val t = Themes.byId(opt.theme)
             val fonts = fontsDir()
             val ass = File(ctx.cacheDir, "caps.ass")
-            ass.writeText(Captions.buildAss(words, t, opt.lang))
+            ass.writeText(Captions.buildAss(words, t, opt.lang, keywords = keywords))
             val out = File(ctx.getExternalFilesDir(null), "brahm_edit_${System.currentTimeMillis()}.mp4")
             val total = durationSec(input)
 
@@ -99,11 +100,26 @@ class AutoEditEngine(private val ctx: Context) {
                 "${branding(t, opt.brand, opt.tag, fonts, opt.aiMark)},format=yuv420p[v]")
 
             val af = AudioChain.build(opt.denoise, opt.voiceClear, opt.pitch)
-            fc.append(";[0:a]$af[a]")
+            val nImg = inputs.size  // count of -i file inputs (video + b-roll)
+            if (opt.music) {
+                val iA = nImg; val iB = nImg + 1
+                fc.append(";[0:a]$af[voc]")
+                fc.append(";[$iA:a][$iB:a]amix=inputs=2,volume=0.10,lowpass=f=2600[mus]")
+                fc.append(";[voc]asplit=2[vout][vsc]")
+                fc.append(";[mus][vsc]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=320[musd]")
+                fc.append(";[vout][musd]amix=inputs=2:normalize=0,alimiter=limit=0.97[a]")
+            } else {
+                fc.append(";[0:a]$af[a]")
+            }
 
             val args = ArrayList<String>()
             args.add("-y")
             for (inp in inputs) { args.add("-i"); args.add(inp) }
+            if (opt.music) {
+                val T = if (total > 0) total else 60.0
+                args.addAll(listOf("-f", "lavfi", "-t", "$T", "-i", "sine=frequency=174.61:sample_rate=44100"))
+                args.addAll(listOf("-f", "lavfi", "-t", "$T", "-i", "sine=frequency=261.63:sample_rate=44100"))
+            }
             args.addAll(listOf("-filter_complex", fc.toString(), "-map", "[v]", "-map", "[a]",
                 "-r", FPS.toString(), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart",

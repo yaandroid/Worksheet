@@ -7,6 +7,8 @@ object Session {
     var opt: AutoEditEngine.Options = AutoEditEngine.Options()
     var wantBroll: Boolean = false
     var wantBg: Boolean = false
+    var wantAutoTheme: Boolean = false
     var pexelsKey: String = ""
+    var groqKey: String = ""
     var bgColor: String = "#0a1a33"
 }

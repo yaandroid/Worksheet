@@ -88,7 +88,8 @@ class MainActivity : AppCompatActivity() {
             voiceClear = b.swVoice.isChecked,
             pitch = (b.sbPitch.progress - 6).toDouble(),
             brand = b.etBrand.text.toString().ifBlank { "BRAHM" },
-            tag = b.etTag.text.toString().ifBlank { "HOMEOPATHY" })
+            tag = b.etTag.text.toString().ifBlank { "HOMEOPATHY" },
+            music = b.swMusic.isChecked)
         val manual = b.etTranscript.text.toString()
         val apiKey = b.etGroqKey.text.toString()
         setBusy(true, "Transcribing…", 20)
@@ -107,7 +108,9 @@ class MainActivity : AppCompatActivity() {
                 Session.opt = opt
                 Session.wantBroll = b.swBroll.isChecked
                 Session.wantBg = b.swBg.isChecked
+                Session.wantAutoTheme = b.swAutoTheme.isChecked
                 Session.pexelsKey = b.etPexels.text.toString()
+                Session.groqKey = apiKey
                 setBusy(false, "Edit screen…", 100)
                 startActivity(android.content.Intent(this@MainActivity, EditActivity::class.java))
             } catch (e: Exception) {

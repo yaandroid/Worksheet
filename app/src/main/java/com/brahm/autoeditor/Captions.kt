@@ -29,7 +29,8 @@ object Captions {
         return String.format("%d:%02d:%05.2f", h, m, s)
     }
 
-    fun buildAss(words: List<Word>, theme: Theme, lang: String, offset: Double = 0.0): String {
+    fun buildAss(words: List<Word>, theme: Theme, lang: String, offset: Double = 0.0,
+                 keywords: List<Keywords.Hit> = emptyList()): String {
         val c = theme.caption
         val font = Themes.LANG_FONT[lang] ?: c.fontLatin
         val prim = Themes.assColor(c.primary)
@@ -48,6 +49,7 @@ YCbCr Matrix: TV.709
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Cap,$font,${c.size},$prim,$prim,$out,&H64000000&,-1,0,0,0,100,100,1,0,1,${c.outlineW},${c.shadow},2,90,90,${c.marginV},1
+Style: Pop,$font,128,$hi,$hi,$out,&H64000000&,-1,0,0,0,100,100,2,0,1,8,2,8,80,80,360,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -68,6 +70,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 val eff = if (i == 0) "{\\fad(${c.fadeIn},${c.fadeOut})}" else ""
                 sb.append("Dialogue: 0,${tc(a)},${tc(b)},Cap,,0,0,0,,$eff$parts\n")
             }
+        }
+        // keyword pop-text (big animated word at top), layer above captions
+        for (k in keywords) {
+            val a = k.start - offset
+            val b = minOf(k.start + 1.4, k.end) - offset
+            if (b <= a) continue
+            val tok = esc(k.keyword)
+            val pop = "{\\fad(120,120)\\fscx55\\fscy55\\t(0,170,\\fscx116\\fscy116)" +
+                "\\t(170,300,\\fscx100\\fscy100)}"
+            sb.append("Dialogue: 1,${tc(a)},${tc(b)},Pop,,0,0,0,,$pop$tok\n")
         }
         return sb.toString()
     }

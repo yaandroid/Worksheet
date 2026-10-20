@@ -52,6 +52,16 @@
                 android:layout_height="wrap_content" android:text="BG remove" android:textColor="#EEF2FF"/>
         </LinearLayout>
 
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:paddingTop="4dp">
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/swMusic" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="Background music" android:textColor="#EEF2FF"/>
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/swAutoTheme" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="AI auto-theme" android:textColor="#EEF2FF"/>
+        </LinearLayout>
+
         <TextView style="@style/Lbl" android:text="Brand text"/>
         <EditText android:id="@+id/etBrand" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:inputType="text" android:textColor="#EEF2FF"/>

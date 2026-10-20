@@ -52,11 +52,21 @@ class EditActivity : AppCompatActivity() {
         val input = Session.inputPath ?: run { toast("Video missing"); return }
         setBusy(true, "Starting…", 5)
 
+        val keywords = Keywords.extract(words)
         lifecycleScope.launch {
             try {
+                // AI auto-theme (optional) — pick a theme from the transcript
+                if (Session.wantAutoTheme) {
+                    runOnUiThread { setBusy(true, "AI theme…", 15) }
+                    val picked = withContext(Dispatchers.IO) {
+                        GroqTheme.pick(words.joinToString(" ") { it.w }, Session.groqKey)
+                    }
+                    if (picked != null) Session.opt = Session.opt.copy(theme = picked)
+                }
+
                 val broll = if (Session.wantBroll) withContext(Dispatchers.IO) {
                     runOnUiThread { setBusy(true, "b-roll images…", 25) }
-                    Broll.resolve(this@EditActivity, Keywords.extract(words), Session.pexelsKey, useAi = true)
+                    Broll.resolve(this@EditActivity, keywords, Session.pexelsKey, useAi = true)
                 } else emptyList()
 
                 var renderInput = input
@@ -66,7 +76,7 @@ class EditActivity : AppCompatActivity() {
                     }
                 }
 
-                AutoEditEngine(this@EditActivity).render(renderInput, words, Session.opt, broll,
+                AutoEditEngine(this@EditActivity).render(renderInput, words, Session.opt, broll, keywords,
                     object : AutoEditEngine.Listener {
                         override fun onProgress(pct: Int, step: String) = runOnUiThread { setBusy(true, step, pct) }
                         override fun onDone(outputPathArg: String) = runOnUiThread {
