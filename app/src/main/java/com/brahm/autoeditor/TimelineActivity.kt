@@ -43,6 +43,108 @@ class TimelineActivity : AppCompatActivity() {
         b.btnPlay.setOnClickListener { togglePlay() }
         b.btnExport.setOnClickListener { export() }
         b.btnShare.setOnClickListener { share() }
+        b.btnTText.setOnClickListener { textDialog() }
+        b.btnTAudio.setOnClickListener { audioDialog() }
+        b.btnTBroll.setOnClickListener { brollDialog() }
+        b.btnTTheme.setOnClickListener { themeDialog() }
+        b.btnTBg.setOnClickListener { bgDialog() }
+        b.btnTFx.setOnClickListener { fxDialog() }
+        b.btnTTemplate.setOnClickListener { templateDialog() }
+    }
+
+    // ---- CapCut-style tool panels (edit Session.opt live) ----
+    private fun syncPreview() {
+        b.ov.theme = Themes.byId(Session.opt.theme)
+        b.ov.brand = Session.opt.brand; b.ov.tag = Session.opt.tag
+        b.ov.popText = Session.opt.popText; b.ov.captionMargin = Session.opt.captionMargin
+        b.ov.invalidate(); b.tl.musicOn = Session.opt.music; b.tl.invalidate()
+    }
+    private fun lbl(t: String) = android.widget.TextView(this).apply { text = t; setTextColor(0xFF9AA6CC.toInt()); setPadding(0, 16, 0, 4) }
+    private fun spin(items: List<String>, sel: Int) = android.widget.Spinner(this).apply {
+        adapter = android.widget.ArrayAdapter(this@TimelineActivity, android.R.layout.simple_spinner_dropdown_item, items); setSelection(sel.coerceIn(0, items.size - 1))
+    }
+    private fun swi(t: String, c: Boolean) = com.google.android.material.switchmaterial.SwitchMaterial(this).apply { text = t; isChecked = c; setTextColor(0xFFEEF2FF.toInt()) }
+    private fun edit(v: String) = android.widget.EditText(this).apply { setText(v); setTextColor(0xFFEEF2FF.toInt()) }
+    private fun panel(vararg views: android.view.View) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL; setPadding(50, 20, 50, 0); views.forEach { addView(it) }
+    }
+    private fun show(title: String, content: LinearLayout, onOk: () -> Unit) {
+        AlertDialog.Builder(this).setTitle(title).setView(androidx.core.widget.NestedScrollView(this).apply { addView(content) })
+            .setPositiveButton("Apply") { _, _ -> onOk(); syncPreview() }.setNegativeButton("Cancel", null).show()
+    }
+
+    private val fonts = listOf("Default (Poppins)", "Anton", "Bebas Neue")
+    private val positions = listOf("Bottom", "Lower", "Middle", "Upper")
+    private val denoises = listOf("off", "light", "medium", "strong")
+
+    private fun textDialog() {
+        val o = Session.opt
+        val spFont = spin(fonts, fonts.indexOf(if (o.fontChoice.isBlank()) "Default (Poppins)" else o.fontChoice).coerceAtLeast(0))
+        val posIdx = when (o.captionMargin) { 160 -> 0; 850 -> 2; 1300 -> 3; else -> 1 }
+        val spPos = spin(positions, posIdx)
+        val swBox = swi("Text background box", o.textBg)
+        val etHi = edit(o.highlight)
+        val swPop = swi("Keyword pop-text (bada shabd)", o.popText)
+        show("Text", panel(lbl("Font"), spFont, lbl("Position"), spPos, swBox,
+            lbl("Highlight color (khaali=theme)"), etHi, swPop)) {
+            Session.opt = o.copy(
+                fontChoice = if (spFont.selectedItemPosition == 0) "" else fonts[spFont.selectedItemPosition],
+                captionMargin = when (spPos.selectedItemPosition) { 0 -> 160; 2 -> 850; 3 -> 1300; else -> 430 },
+                textBg = swBox.isChecked, highlight = etHi.text.toString().trim(), popText = swPop.isChecked)
+        }
+    }
+    private fun audioDialog() {
+        val o = Session.opt
+        val swMusic = swi("Background music", o.music)
+        val swVoice = swi("Voice clear", o.voiceClear)
+        val spDen = spin(denoises, denoises.indexOf(o.denoise).coerceAtLeast(0))
+        val sbPitch = android.widget.SeekBar(this).apply { max = 12; progress = (o.pitch + 6).toInt() }
+        show("Audio", panel(swMusic, swVoice, lbl("Noise removal"), spDen, lbl("Pitch (-6..+6)"), sbPitch)) {
+            Session.opt = o.copy(music = swMusic.isChecked, voiceClear = swVoice.isChecked,
+                denoise = denoises[spDen.selectedItemPosition], pitch = (sbPitch.progress - 6).toDouble())
+        }
+    }
+    private fun brollDialog() {
+        val swAuto = swi("Auto b-roll images", Session.wantBroll)
+        val swPip = swi("PiP (b-roll fullscreen + circle)", Session.opt.pip)
+        val etPex = edit(Session.pexelsKey)
+        show("B-roll", panel(swAuto, swPip, lbl("Pexels API key (optional)"), etPex)) {
+            Session.wantBroll = swAuto.isChecked; Session.pexelsKey = etPex.text.toString()
+            Session.opt = Session.opt.copy(pip = swPip.isChecked)
+            refreshTimeline(b.tl.totalSec)
+        }
+    }
+    private fun themeDialog() {
+        val ids = Themes.ALL.map { it.label }
+        val cur = Themes.ALL.indexOfFirst { it.id == Session.opt.theme }.coerceAtLeast(0)
+        AlertDialog.Builder(this).setTitle("Theme").setSingleChoiceItems(ids.toTypedArray(), cur) { d, w ->
+            Session.opt = Session.opt.copy(theme = Themes.ALL[w].id); syncPreview(); d.dismiss()
+        }.setNegativeButton("Cancel", null).show()
+    }
+    private fun bgDialog() {
+        val modes = listOf("None", "Green screen (fast)", "AI remove (slow)")
+        val cur = when (Session.bgMode) { "green" -> 1; "ai" -> 2; else -> 0 }
+        val etCol = edit(Session.bgColor)
+        val sp = spin(modes, cur)
+        show("Background", panel(lbl("Mode"), sp, lbl("Naya background color"), etCol)) {
+            Session.bgMode = when (sp.selectedItemPosition) { 1 -> "green"; 2 -> "ai"; else -> "none" }
+            Session.bgColor = etCol.text.toString().ifBlank { "#0a1a33" }
+            Session.opt = Session.opt.copy(bgMode = if (Session.bgMode == "green") "green" else "none", bgColor = Session.bgColor)
+        }
+    }
+    private fun fxDialog() {
+        val swTheme = swi("AI auto-theme", Session.wantAutoTheme)
+        val swPop = swi("Keyword pop-text", Session.opt.popText)
+        show("Effects", panel(swTheme, swPop)) {
+            Session.wantAutoTheme = swTheme.isChecked
+            Session.opt = Session.opt.copy(popText = swPop.isChecked)
+        }
+    }
+    private fun templateDialog() {
+        val names = Templates.LIST.map { it.name }
+        AlertDialog.Builder(this).setTitle("Template").setItems(names.toTypedArray()) { _, w ->
+            Session.opt = Templates.apply(Session.opt, w); syncPreview()
+        }.setNegativeButton("Cancel", null).show()
     }
 
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())

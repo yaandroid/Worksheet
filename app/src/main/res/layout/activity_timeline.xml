@@ -27,6 +27,20 @@
             android:layout_height="wrap_content" android:text="➕"/>
     </LinearLayout>
 
+    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:scrollbars="none">
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button android:id="@+id/btnTText" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🅣 Text" android:textColor="#EEF2FF"/>
+            <Button android:id="@+id/btnTAudio" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🎵 Audio" android:textColor="#EEF2FF"/>
+            <Button android:id="@+id/btnTBroll" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🖼 B-roll" android:textColor="#EEF2FF"/>
+            <Button android:id="@+id/btnTTheme" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🎨 Theme" android:textColor="#EEF2FF"/>
+            <Button android:id="@+id/btnTBg" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🌀 BG" android:textColor="#EEF2FF"/>
+            <Button android:id="@+id/btnTFx" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="✨ FX" android:textColor="#EEF2FF"/>
+            <Button android:id="@+id/btnTTemplate" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⚡ Template" android:textColor="#EEF2FF"/>
+        </LinearLayout>
+    </HorizontalScrollView>
+
     <Button android:id="@+id/btnExport" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:text="⤓ Export (compile)" android:backgroundTint="#FFC400" android:textColor="#1A1300"/>
     <ProgressBar android:id="@+id/progress" style="?android:attr/progressBarStyleHorizontal"
