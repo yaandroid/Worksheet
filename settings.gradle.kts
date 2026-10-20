@@ -10,10 +10,13 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // FFmpegKit was retired from Maven Central in 2025. If the dependency
-        // fails to resolve, add a mirror here, e.g.:
-        // maven("https://raw.githubusercontent.com/jitpack/maven-mirror/master")
+        // ffmpeg-kit was retired from Maven Central (2025). These mirrors still
+        // serve the cached AAR; the resolver falls through until one has it.
+        maven("https://maven.aliyun.com/repository/public")
+        maven("https://maven.aliyun.com/repository/google")
+        maven("https://repo.huaweicloud.com/repository/maven/")
         maven("https://jitpack.io")
+        maven("https://jcenter.bintray.com")
     }
 }
 rootProject.name = "BRAHM Auto-Editor"
