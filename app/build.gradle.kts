@@ -14,6 +14,7 @@ android {
         versionCode = 1           // kept fixed pre-release
         versionName = "1.1"       // visible version, do not bump unless asked
         vectorDrawables { useSupportLibrary = true }
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     buildTypes {
