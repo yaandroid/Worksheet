@@ -10,67 +10,63 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.segmentation.Segmentation
 import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
 import java.io.File
-import java.nio.ByteBuffer
 
-/** On-device background replacement via ML Kit Selfie Segmentation.
- *  Extract frames -> segment each -> composite over a themed colour -> re-encode.
- *  Heavy; use on shorter clips. Fails gracefully (returns input on error). */
+/** Fast on-device background replacement (ML Kit Selfie Segmentation).
+ *  Processes at HALF resolution + JPEG frames + single-pass composite for speed.
+ *  The main engine upscales the result back to 1080x1920. */
 object BgRemover {
+    private const val PW = 540
+    private const val PH = 960
+    private const val FPS = 24
 
-    private fun colorInt(hex: String): Triple<Int, Int, Int> {
+    private fun colorInt(hex: String): Int {
         val c = hex.removePrefix("#")
-        return Triple(c.substring(0, 2).toInt(16), c.substring(2, 4).toInt(16), c.substring(4, 6).toInt(16))
+        val r = c.substring(0, 2).toInt(16); val g = c.substring(2, 4).toInt(16); val b = c.substring(4, 6).toInt(16)
+        return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
     }
 
     fun run(ctx: Context, input: String, bgHex: String, onStep: (String, Int) -> Unit): String {
         try {
             val work = File(ctx.cacheDir, "bg_${System.currentTimeMillis()}")
-            val fin = File(work, "in"); val fout = File(work, "out")
-            fin.mkdirs(); fout.mkdirs()
-            onStep("background: extracting frames", 42)
-            val ex = FFmpegKit.execute("-y -i \"$input\" -vf fps=30 \"${fin.absolutePath}/%05d.png\"")
+            val fin = File(work, "in"); fin.mkdirs()
+            onStep("background: extracting", 42)
+            val ex = FFmpegKit.execute(
+                "-y -i \"$input\" -vf \"fps=$FPS,scale=$PW:$PH:force_original_aspect_ratio=increase,crop=$PW:$PH\" " +
+                    "-q:v 3 \"${fin.absolutePath}/%05d.jpg\"")
             if (!ReturnCode.isSuccess(ex.returnCode)) return input
 
-            val opts = SelfieSegmenterOptions.Builder()
-                .setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE).build()
-            val seg = Segmentation.getClient(opts)
-            val (br, bg, bb) = colorInt(bgHex)
+            val seg = Segmentation.getClient(
+                SelfieSegmenterOptions.Builder()
+                    .setDetectorMode(SelfieSegmenterOptions.STREAM_MODE).build())
+            val bgColor = colorInt(bgHex)
 
-            val frames = fin.listFiles { f -> f.name.endsWith(".png") }?.sortedBy { it.name } ?: emptyList()
+            val frames = fin.listFiles { f -> f.name.endsWith(".jpg") }?.sortedBy { it.name } ?: emptyList()
             if (frames.isEmpty()) return input
-            onStep("background: removing (${frames.size} frames)", 48)
+            onStep("background: removing (${frames.size} frames)", 46)
+            val n = frames.size
             for ((i, fr) in frames.withIndex()) {
-                val bmp = BitmapFactory.decodeFile(fr.absolutePath) ?: continue
-                val mutable = bmp.copy(Bitmap.Config.ARGB_8888, true)
-                val mask = Tasks.await(seg.process(InputImage.fromBitmap(mutable, 0)))
-                val buf: ByteBuffer = mask.buffer
-                val mw = mask.width; val mh = mask.height
-                val w = mutable.width; val h = mutable.height
-                val px = IntArray(w * h); mutable.getPixels(px, 0, w, 0, 0, w, h)
-                buf.rewind()
-                // mask may differ in size; sample nearest
-                for (y in 0 until h) {
-                    val my = (y * mh / h).coerceIn(0, mh - 1)
-                    for (x in 0 until w) {
-                        val mx = (x * mw / w).coerceIn(0, mw - 1)
-                        val conf = buf.getFloat((my * mw + mx) * 4)
-                        if (conf < 0.5f) {
-                            val idx = y * w + x
-                            val a = px[idx] ushr 24
-                            px[idx] = (a shl 24) or (br shl 16) or (bg shl 8) or bb
-                        }
-                    }
+                val bmp = BitmapFactory.decodeFile(fr.absolutePath)?.copy(Bitmap.Config.ARGB_8888, true) ?: continue
+                val mask = Tasks.await(seg.process(InputImage.fromBitmap(bmp, 0)))
+                val buf = mask.buffer; buf.rewind()
+                val w = bmp.width; val h = bmp.height
+                val px = IntArray(w * h); bmp.getPixels(px, 0, w, 0, 0, w, h)
+                // mask is the same size as the input bitmap in selfie segmentation
+                val total = w * h
+                var idx = 0
+                while (idx < total) {
+                    if (buf.float < 0.5f) px[idx] = bgColor
+                    idx++
                 }
-                mutable.setPixels(px, 0, w, 0, 0, w, h)
-                fr.outputStream().use { mutable.compress(Bitmap.CompressFormat.PNG, 90, it) }
+                bmp.setPixels(px, 0, w, 0, 0, w, h)
+                fr.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
                 bmp.recycle()
-                if (i % 15 == 0) onStep("background: ${i}/${frames.size}", 48 + (i * 12 / frames.size))
+                if (i % 10 == 0) onStep("background: $i/$n", 46 + (i * 18 / n))
             }
-            onStep("background: re-encoding", 62)
+            onStep("background: re-encoding", 66)
             val outFile = File(work, "bg.mp4").absolutePath
             val enc = FFmpegKit.execute(
-                "-y -framerate 30 -i \"${fin.absolutePath}/%05d.png\" -i \"$input\" " +
-                    "-map 0:v -map 1:a? -c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac -shortest \"$outFile\"")
+                "-y -framerate $FPS -i \"${fin.absolutePath}/%05d.jpg\" -i \"$input\" " +
+                    "-map 0:v -map 1:a? -c:v libx264 -crf 22 -pix_fmt yuv420p -c:a aac -shortest \"$outFile\"")
             return if (ReturnCode.isSuccess(enc.returnCode)) outFile else input
         } catch (e: Exception) {
             return input
