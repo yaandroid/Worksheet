@@ -1,30 +1,35 @@
 name: Build APK
 on:
-  push:
-    branches: [ "brahm-autoeditor-apk" ]
+  push: { branches: [ "brahm-autoeditor-apk" ] }
   workflow_dispatch:
-permissions:
-  contents: write
+permissions: { contents: write }
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '17' }
-      - name: Build debug APK
-        run: |
-          set -o pipefail
-          chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build.log || true
-      - name: Export apk + log to ci-output
-        if: always()
+      - name: Find a downloadable ffmpeg-kit AAR
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |
           mkdir -p /tmp/out
-          tail -c 60000 /tmp/build.log > /tmp/out/build.tail.log || true
-          find app/build/outputs/apk/debug -name '*.apk' -exec cp {} /tmp/out/app-debug.apk \; || true
-          cd /tmp/out
-          git init -q; git checkout -b ci-output
-          git add -A
-          git -c user.email=ci@brahm -c user.name=CI commit -q -m "output ${GITHUB_SHA}"
+          P=/tmp/out/probe.txt; : > $P
+          echo "== code search: ffmpeg-kit-full aar ==" >> $P
+          for q in "ffmpeg-kit-full-6.0-2.aar" "ffmpeg-kit-full-6.0.LTS.aar" "filename:ffmpeg-kit-full.aar" "ffmpeg-kit-full extension:aar"; do
+            echo "-- q=$q --" >> $P
+            curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/search/code?q=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$q")&per_page=8" \
+              | python3 -c "import sys,json;d=json.load(sys.stdin);print('total',d.get('total_count','ERR',));[print(i['repository']['full_name'],i['path'],i.get('html_url','')) for i in d.get('items',[])[:8]]" >> $P 2>>$P || echo "search err" >> $P
+          done
+          echo "" >> $P
+          echo "== direct URL checks (known rehosts/mirrors) ==" >> $P
+          for u in \
+            "https://repo1.maven.org/maven2/com/arthenica/mobile-ffmpeg-full/4.4.LTS/mobile-ffmpeg-full-4.4.LTS.aar" \
+            "https://repo1.maven.org/maven2/com/arthenica/smart-exception-java/0.2.1/smart-exception-java-0.2.1.jar" \
+            "https://repo1.maven.org/maven2/com/arthenica/smart-exception-common/0.2.1/smart-exception-common-0.2.1.jar" \
+            ; do echo "$(curl -s -o /dev/null -w '%{http_code}' -L "$u")  $u" >> $P; done
+      - name: Publish probe
+        if: always()
+        run: |
+          cd /tmp/out; git init -q; git checkout -b ci-output; git add -A
+          git -c user.email=ci@brahm -c user.name=CI commit -q -m "probe2 ${GITHUB_SHA}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-output
