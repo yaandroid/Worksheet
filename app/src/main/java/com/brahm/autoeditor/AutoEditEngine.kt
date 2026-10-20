@@ -1,9 +1,9 @@
 package com.brahm.autoeditor
 
 import android.content.Context
-import com.arthenica.ffmpegkit.FFmpegKit
-import com.arthenica.ffmpegkit.FFprobeKit
-import com.arthenica.ffmpegkit.ReturnCode
+import com.antonkarpenko.ffmpegkit.FFmpegKit
+import com.antonkarpenko.ffmpegkit.FFprobeKit
+import com.antonkarpenko.ffmpegkit.ReturnCode
 import java.io.File
 
 /** On-device auto-edit — builds the same FFmpeg graphs as the web engine
