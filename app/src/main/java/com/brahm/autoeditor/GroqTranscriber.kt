@@ -31,7 +31,8 @@ class GroqTranscriber(private val ctx: Context) {
 
     /** Blocking — call from a background thread/coroutine. */
     fun transcribe(input: String, apiKey: String, language: String?): List<Word> {
-        if (apiKey.isBlank()) throw RuntimeException("Groq API key missing — settings me key daalo ya transcript paste karo.")
+        val key = apiKey.filterNot { it.isWhitespace() }
+        if (key.isBlank()) throw RuntimeException("Groq API key missing — settings me key daalo ya transcript paste karo.")
         val wav = extractWav(input)
         val bodyBuilder = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("file", "audio.wav", wav.asRequestBody("audio/wav".toMediaType()))
@@ -41,7 +42,7 @@ class GroqTranscriber(private val ctx: Context) {
         if (!language.isNullOrBlank()) bodyBuilder.addFormDataPart("language", language)
         val req = Request.Builder()
             .url("https://api.groq.com/openai/v1/audio/transcriptions")
-            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Authorization", "Bearer $key")
             .post(bodyBuilder.build())
             .build()
         client.newCall(req).execute().use { resp ->
