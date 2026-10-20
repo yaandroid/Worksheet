@@ -48,19 +48,23 @@
                 android:id="@+id/swBroll" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="Auto b-roll images" android:textColor="#EEF2FF"/>
             <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/swBg" android:layout_width="0dp" android:layout_weight="1"
-                android:layout_height="wrap_content" android:text="BG remove" android:textColor="#EEF2FF"/>
+                android:id="@+id/swMusic" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="Background music" android:textColor="#EEF2FF"/>
         </LinearLayout>
 
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="horizontal" android:paddingTop="4dp">
             <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/swMusic" android:layout_width="0dp" android:layout_weight="1"
-                android:layout_height="wrap_content" android:text="Background music" android:textColor="#EEF2FF"/>
-            <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/swAutoTheme" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:text="AI auto-theme" android:textColor="#EEF2FF"/>
+            <View android:layout_width="0dp" android:layout_weight="1" android:layout_height="1dp"/>
         </LinearLayout>
+
+        <TextView style="@style/Lbl" android:text="Background remove (none / green screen / AI)"/>
+        <Spinner android:id="@+id/spBg" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        <TextView style="@style/Lbl" android:text="Naya background color (remove karne par)"/>
+        <EditText android:id="@+id/etBgColor" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="#0a1a33" android:inputType="text" android:textColor="#EEF2FF"/>
 
         <TextView style="@style/Lbl" android:text="Brand text"/>
         <EditText android:id="@+id/etBrand" android:layout_width="match_parent"

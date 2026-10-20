@@ -70,7 +70,7 @@ class EditActivity : AppCompatActivity() {
                 } else emptyList()
 
                 var renderInput = input
-                if (Session.wantBg) renderInput = withContext(Dispatchers.IO) {
+                if (Session.bgMode == "ai") renderInput = withContext(Dispatchers.IO) {
                     BgRemover.run(this@EditActivity, input, Session.bgColor) { s, p ->
                         runOnUiThread { setBusy(true, s, p) }
                     }

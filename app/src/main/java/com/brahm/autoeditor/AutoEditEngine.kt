@@ -21,7 +21,10 @@ class AutoEditEngine(private val ctx: Context) {
         val brand: String = "BRAHM",
         val tag: String = "HOMEOPATHY",
         val aiMark: Boolean = true,
-        val music: Boolean = false
+        val music: Boolean = false,
+        val bgMode: String = "none",      // none | green  (ai handled as a pre-pass)
+        val bgColor: String = "#0a1a33",
+        val greenKey: String = "0x00D000" // chroma key colour for green screen
     )
 
     interface Listener {
@@ -73,16 +76,21 @@ class AutoEditEngine(private val ctx: Context) {
             val out = File(ctx.getExternalFilesDir(null), "brahm_edit_${System.currentTimeMillis()}.mp4")
             val total = durationSec(input)
 
-            // base video graph up to zoom
-            val baseVf = "scale=$W:$H:force_original_aspect_ratio=increase,crop=$W:$H," +
-                "${t.grade},${zoom(t)}"
-
-            // b-roll overlays (rounded circular cards that pop on keywords)
+            val gradeZoom = "${t.grade},${zoom(t)}"
             val inputs = ArrayList<String>()
             inputs.add(input)
             val fc = StringBuilder()
             var cur = "bv"
-            fc.append("[0:v]$baseVf[$cur];")
+            if (opt.bgMode == "green") {
+                val bgc = opt.bgColor.removePrefix("#")
+                fc.append("[0:v]scale=$W:$H:force_original_aspect_ratio=increase,crop=$W:$H," +
+                    "chromakey=${opt.greenKey}:0.30:0.12[keyed];")
+                fc.append("color=c=0x$bgc:s=${W}x${H}[bgc];")
+                fc.append("[bgc][keyed]overlay[kd];")
+                fc.append("[kd]$gradeZoom[$cur];")
+            } else {
+                fc.append("[0:v]scale=$W:$H:force_original_aspect_ratio=increase,crop=$W:$H,$gradeZoom[$cur];")
+            }
             val box = 640; val bx = (W - box) / 2; val by = 250
             for ((n, p) in broll.withIndex()) {
                 inputs.add(p.imagePath)

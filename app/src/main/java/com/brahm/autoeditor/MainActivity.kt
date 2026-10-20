@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
         b.spLang.adapter = adapter(langNames)
         b.spDenoise.adapter = adapter(denoiseVals.map { it.replaceFirstChar { c -> c.uppercase() } })
         b.spDenoise.setSelection(2)
+        b.spBg.adapter = adapter(listOf("None", "Green screen (fast)", "AI remove (slow)"))
         b.etBrand.setText(prefs.brand)
         b.etGroqKey.setText(prefs.groqKey)
         b.etPexels.setText(prefs.pexelsKey)
@@ -89,7 +90,9 @@ class MainActivity : AppCompatActivity() {
             pitch = (b.sbPitch.progress - 6).toDouble(),
             brand = b.etBrand.text.toString().ifBlank { "BRAHM" },
             tag = b.etTag.text.toString().ifBlank { "HOMEOPATHY" },
-            music = b.swMusic.isChecked)
+            music = b.swMusic.isChecked,
+            bgMode = if (b.spBg.selectedItemPosition == 1) "green" else "none",
+            bgColor = b.etBgColor.text.toString().ifBlank { "#0a1a33" })
         val manual = b.etTranscript.text.toString()
         val apiKey = b.etGroqKey.text.toString()
         setBusy(true, "Transcribing…", 20)
@@ -107,10 +110,11 @@ class MainActivity : AppCompatActivity() {
                 Session.words = words.toMutableList()
                 Session.opt = opt
                 Session.wantBroll = b.swBroll.isChecked
-                Session.wantBg = b.swBg.isChecked
+                Session.bgMode = when (b.spBg.selectedItemPosition) { 1 -> "green"; 2 -> "ai"; else -> "none" }
                 Session.wantAutoTheme = b.swAutoTheme.isChecked
                 Session.pexelsKey = b.etPexels.text.toString()
                 Session.groqKey = apiKey
+                Session.bgColor = b.etBgColor.text.toString().ifBlank { "#0a1a33" }
                 setBusy(false, "Edit screen…", 100)
                 startActivity(android.content.Intent(this@MainActivity, EditActivity::class.java))
             } catch (e: Exception) {

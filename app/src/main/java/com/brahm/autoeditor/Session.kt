@@ -6,7 +6,7 @@ object Session {
     var words: MutableList<Word> = mutableListOf()
     var opt: AutoEditEngine.Options = AutoEditEngine.Options()
     var wantBroll: Boolean = false
-    var wantBg: Boolean = false
+    var bgMode: String = "none"   // none | green | ai
     var wantAutoTheme: Boolean = false
     var pexelsKey: String = ""
     var groqKey: String = ""
