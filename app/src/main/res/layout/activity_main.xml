@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0B1020"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/app_name" android:textColor="#FFC400"
+            android:textSize="22sp" android:textStyle="bold" android:paddingBottom="12dp"/>
+
+        <Button android:id="@+id/btnPick" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="📁 Raw video chuno"/>
+        <TextView android:id="@+id/tvFile" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="koi file nahi"
+            android:textColor="#9AA6CC" android:paddingBottom="10dp"/>
+
+        <TextView style="@style/Lbl" android:text="Theme"/>
+        <Spinner android:id="@+id/spTheme" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
+        <TextView style="@style/Lbl" android:text="Caption language"/>
+        <Spinner android:id="@+id/spLang" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
+        <TextView style="@style/Lbl" android:text="Noise removal"/>
+        <Spinner android:id="@+id/spDenoise" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:paddingTop="8dp">
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/swVoice" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:checked="true"
+                android:text="Voice clear" android:textColor="#EEF2FF"/>
+            <TextView style="@style/Lbl" android:text="Pitch: "/>
+            <TextView android:id="@+id/tvPitch" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:text="0" android:textColor="#FFC400"/>
+        </LinearLayout>
+        <SeekBar android:id="@+id/sbPitch" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
+        <TextView style="@style/Lbl" android:text="Brand text"/>
+        <EditText android:id="@+id/etBrand" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:inputType="text" android:textColor="#EEF2FF"/>
+        <TextView style="@style/Lbl" android:text="Brand tag line"/>
+        <EditText android:id="@+id/etTag" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="HOMEOPATHY" android:inputType="text" android:textColor="#EEF2FF"/>
+
+        <TextView style="@style/Lbl" android:text="Groq API key (AI — device par save)"/>
+        <EditText android:id="@+id/etGroqKey" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="gsk_..." android:inputType="textPassword"
+            android:textColor="#EEF2FF" android:textColorHint="#55608A"/>
+
+        <TextView style="@style/Lbl" android:text="Ya transcript paste karo (bina AI)"/>
+        <EditText android:id="@+id/etTranscript" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:minLines="2" android:gravity="top"
+            android:inputType="textMultiLine" android:textColor="#EEF2FF"/>
+
+        <Button android:id="@+id/btnGo" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="16dp"
+            android:text="✨ AI Auto-Edit — ek tap" android:backgroundTint="#FFC400" android:textColor="#1A1300"/>
+
+        <ProgressBar android:id="@+id/progress" style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:max="100" android:layout_marginTop="10dp"/>
+        <TextView android:id="@+id/tvStatus" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="" android:textColor="#9AA6CC"/>
+
+        <VideoView android:id="@+id/vv" android:layout_width="match_parent"
+            android:layout_height="420dp" android:layout_marginTop="12dp"/>
+
+        <Button android:id="@+id/btnShare" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="⬇️ Share / Save MP4" android:enabled="false"/>
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:paddingTop="16dp" android:textColor="#55608A" android:textSize="11sp"
+            android:text="AI-assisted edits par 'AI-assisted' mark auto. Koi guarantee/claim wording nahi.\nBrahm InnerBrain Technologies Pvt. Ltd. · Developed by Sandeep Kushwah"/>
+    </LinearLayout>
+</ScrollView>
