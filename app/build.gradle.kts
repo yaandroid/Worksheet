@@ -44,7 +44,7 @@ dependencies {
     // Video processing on-device (same FFmpeg filtergraphs as the web engine).
     // NOTE: ffmpeg-kit was retired from Maven Central (2025). If this fails to
     // resolve, use a community mirror/AAR. See android/README.md.
-    implementation("com.arthenica:ffmpeg-kit-full:6.0-2")
+    implementation("com.arthenica:ffmpeg-kit-full:6.0.LTS")
 
     // HTTP for Groq Whisper transcription
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

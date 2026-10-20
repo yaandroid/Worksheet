@@ -10,29 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Probe ffmpeg libraries available now
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - name: Build debug APK
         run: |
-          mkdir -p /tmp/out
-          echo "== search.maven.org ffmpeg-kit (all) ==" > /tmp/out/probe.txt
-          curl -s "https://search.maven.org/solrsearch/select?q=ffmpeg-kit&rows=60&wt=json" | tr ',' '\n' | grep -iE '"(id|g|a|v|latestVersion)"' | head -80 >> /tmp/out/probe.txt
-          echo "" >> /tmp/out/probe.txt
-          echo "== search ffmpeg (android libs) ==" >> /tmp/out/probe.txt
-          curl -s "https://search.maven.org/solrsearch/select?q=ffmpeg&rows=80&wt=json" | tr ',' '\n' | grep -iE '"id"' | head -80 >> /tmp/out/probe.txt
-          echo "" >> /tmp/out/probe.txt
-          echo "== direct AAR url checks ==" >> /tmp/out/probe.txt
-          for u in \
-            "https://repo1.maven.org/maven2/com/arthenica/ffmpeg-kit-full/6.0-2/ffmpeg-kit-full-6.0-2.aar" \
-            "https://repo1.maven.org/maven2/com/arthenica/ffmpeg-kit-android-full/6.0-2/ffmpeg-kit-android-full-6.0-2.aar" \
-            "https://repo1.maven.org/maven2/com/arthenica/mobile-ffmpeg-full/4.4/mobile-ffmpeg-full-4.4.aar" \
-            "https://s01.oss.sonatype.org/content/repositories/releases/com/arthenica/ffmpeg-kit-full/6.0-2/ffmpeg-kit-full-6.0-2.aar" \
-            ; do code=$(curl -s -o /dev/null -w "%{http_code}" -L "$u"); echo "$code  $u" >> /tmp/out/probe.txt; done
-          echo "== smart-exception (ffmpeg-kit dep) ==" >> /tmp/out/probe.txt
-          curl -s "https://search.maven.org/solrsearch/select?q=smart-exception&rows=20&wt=json" | tr ',' '\n' | grep -iE '"id"' | head >> /tmp/out/probe.txt
-      - name: Publish probe to ci-output
+          set -o pipefail
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build.log || true
+      - name: Export apk + log to ci-output
         if: always()
         run: |
+          mkdir -p /tmp/out
+          tail -c 60000 /tmp/build.log > /tmp/out/build.tail.log || true
+          find app/build/outputs/apk/debug -name '*.apk' -exec cp {} /tmp/out/app-debug.apk \; || true
           cd /tmp/out
           git init -q; git checkout -b ci-output
           git add -A
-          git -c user.email=ci@brahm -c user.name=CI commit -q -m "probe ${GITHUB_SHA}"
+          git -c user.email=ci@brahm -c user.name=CI commit -q -m "output ${GITHUB_SHA}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-output
