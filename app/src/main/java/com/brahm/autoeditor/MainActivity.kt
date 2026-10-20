@@ -91,10 +91,7 @@ class MainActivity : AppCompatActivity() {
             tag = b.etTag.text.toString().ifBlank { "HOMEOPATHY" })
         val manual = b.etTranscript.text.toString()
         val apiKey = b.etGroqKey.text.toString()
-        val pexels = b.etPexels.text.toString()
-        val wantBroll = b.swBroll.isChecked
-        val wantBg = b.swBg.isChecked
-        setBusy(true, "Transcribing…", 10)
+        setBusy(true, "Transcribing…", 20)
 
         lifecycleScope.launch {
             try {
@@ -104,34 +101,15 @@ class MainActivity : AppCompatActivity() {
                     else tr.transcribe(input, apiKey, prefs.lang)
                 }
                 if (words.isEmpty()) throw RuntimeException("No speech / transcript.")
-
-                // b-roll images (keyword -> image), if enabled
-                val broll = if (wantBroll) withContext(Dispatchers.IO) {
-                    runOnUiThread { setBusy(true, "b-roll images…", 30) }
-                    Broll.resolve(this@MainActivity, Keywords.extract(words), pexels, useAi = true)
-                } else emptyList()
-
-                // background remove pre-pass, if enabled
-                var renderInput = input
-                if (wantBg) {
-                    renderInput = withContext(Dispatchers.IO) {
-                        BgRemover.run(this@MainActivity, input, "#0a1a33") { s, p ->
-                            runOnUiThread { setBusy(true, s, p) }
-                        }
-                    }
-                }
-
-                AutoEditEngine(this@MainActivity).render(renderInput, words, opt, broll,
-                    object : AutoEditEngine.Listener {
-                        override fun onProgress(pct: Int, step: String) = runOnUiThread { setBusy(true, step, pct) }
-                        override fun onDone(outputPathArg: String) = runOnUiThread {
-                            outputPath = outputPathArg
-                            setBusy(false, "Ready ✓", 100)
-                            b.vv.setVideoPath(outputPathArg); b.vv.start()
-                            b.btnShare.isEnabled = true
-                        }
-                        override fun onError(message: String) = runOnUiThread { setBusy(false, "Error: $message", 0) }
-                    })
+                // hand off to the Edit & Preview screen (fix text/timing, then render)
+                Session.inputPath = input
+                Session.words = words.toMutableList()
+                Session.opt = opt
+                Session.wantBroll = b.swBroll.isChecked
+                Session.wantBg = b.swBg.isChecked
+                Session.pexelsKey = b.etPexels.text.toString()
+                setBusy(false, "Edit screen…", 100)
+                startActivity(android.content.Intent(this@MainActivity, EditActivity::class.java))
             } catch (e: Exception) {
                 runOnUiThread { setBusy(false, "Error: ${e.message}", 0) }
             }
