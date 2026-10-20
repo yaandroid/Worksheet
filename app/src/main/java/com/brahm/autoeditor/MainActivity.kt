@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
         b.spDenoise.adapter = adapter(denoiseVals.map { it.replaceFirstChar { c -> c.uppercase() } })
         b.spDenoise.setSelection(2)
         b.spBg.adapter = adapter(listOf("None", "Green screen (fast)", "AI remove (slow)"))
+        b.spFont.adapter = adapter(listOf("Default (Poppins)", "Anton", "Bebas Neue"))
         b.etBrand.setText(prefs.brand)
         b.etGroqKey.setText(prefs.groqKey)
         b.etPexels.setText(prefs.pexelsKey)
@@ -92,7 +93,11 @@ class MainActivity : AppCompatActivity() {
             tag = b.etTag.text.toString().ifBlank { "HOMEOPATHY" },
             music = b.swMusic.isChecked,
             bgMode = if (b.spBg.selectedItemPosition == 1) "green" else "none",
-            bgColor = b.etBgColor.text.toString().ifBlank { "#0a1a33" })
+            bgColor = b.etBgColor.text.toString().ifBlank { "#0a1a33" },
+            fontChoice = when (b.spFont.selectedItemPosition) { 1 -> "Anton"; 2 -> "Bebas Neue"; else -> "" },
+            textBg = b.swTextBg.isChecked,
+            textBgColor = b.etTextBgColor.text.toString().ifBlank { "#000000" },
+            highlight = b.etHighlight.text.toString().trim())
         val manual = b.etTranscript.text.toString()
         val apiKey = b.etGroqKey.text.toString()
         setBusy(true, "Transcribing…", 20)

@@ -30,12 +30,15 @@ object Captions {
     }
 
     fun buildAss(words: List<Word>, theme: Theme, lang: String, offset: Double = 0.0,
-                 keywords: List<Keywords.Hit> = emptyList()): String {
+                 keywords: List<Keywords.Hit> = emptyList(),
+                 fontChoice: String = "", textBg: Boolean = false,
+                 textBgColor: String = "#000000", highlight: String = ""): String {
         val c = theme.caption
-        val font = Themes.LANG_FONT[lang] ?: c.fontLatin
+        val font = if (fontChoice.isNotBlank() && lang == "en") fontChoice else (Themes.LANG_FONT[lang] ?: c.fontLatin)
         val prim = Themes.assColor(c.primary)
-        val hi = Themes.assColor(c.highlight)
-        val out = Themes.assColor(c.outline)
+        val hi = if (highlight.isNotBlank()) Themes.assColor(highlight) else Themes.assColor(c.highlight)
+        val out = if (textBg) Themes.assColor(textBgColor) else Themes.assColor(c.outline)
+        val border = if (textBg) 3 else 1
         val sb = StringBuilder()
         sb.append(
             """[Script Info]
@@ -48,8 +51,8 @@ YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,$font,${c.size},$prim,$prim,$out,&H64000000&,-1,0,0,0,100,100,1,0,1,${c.outlineW},${c.shadow},2,90,90,${c.marginV},1
-Style: Pop,$font,128,$hi,$hi,$out,&H64000000&,-1,0,0,0,100,100,2,0,1,8,2,8,80,80,360,1
+Style: Cap,$font,${c.size},$prim,$prim,$out,&H64000000&,-1,0,0,0,100,100,1,0,$border,${c.outlineW},${c.shadow},2,90,90,${c.marginV},1
+Style: Pop,$font,128,$hi,$hi,${Themes.assColor(c.outline)},&H64000000&,-1,0,0,0,100,100,2,0,1,8,2,8,80,80,360,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

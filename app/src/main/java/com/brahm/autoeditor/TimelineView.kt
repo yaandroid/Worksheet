@@ -89,19 +89,53 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
         }
     }
 
-    private var downX = 0f; private var downY = 0f; private var dragging = false
+    var onEdited: (() -> Unit)? = null
+    private var downX = 0f; private var lastX = 0f; private var dragging = false
+    private var mode = 0           // 0 scroll, 1 move block, 2 trim-left, 3 trim-right
+    private var blockIdx = -1
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.action) {
-            MotionEvent.ACTION_DOWN -> { downX = e.x; downY = e.y; dragging = false; return true }
+            MotionEvent.ACTION_DOWN -> {
+                downX = e.x; lastX = e.x; dragging = false; mode = 0; blockIdx = -1
+                val ri = ((e.y - 30f) / rowH).toInt()
+                if (ri == 1) {
+                    val t = ((e.x - labelW + scrollX) / pxPerSec).toDouble()
+                    blockIdx = captions.indexOfFirst { t >= it.s && t <= it.e }
+                    if (blockIdx >= 0) {
+                        val w = captions[blockIdx]
+                        mode = when {
+                            abs(e.x - x(w.s)) < 30 -> 2
+                            abs(e.x - x(w.e)) < 30 -> 3
+                            else -> 1
+                        }
+                    }
+                }
+                return true
+            }
             MotionEvent.ACTION_MOVE -> {
-                if (abs(e.x - downX) > 12) { dragging = true
-                    scrollX = (scrollX - (e.x - downX)).coerceAtLeast(0f)
-                    downX = e.x; invalidate()
-                    onSeek?.invoke(currentTime()) }
+                val dx = e.x - lastX; lastX = e.x
+                if (abs(e.x - downX) > 10) dragging = true
+                if (mode > 0 && blockIdx in captions.indices) {
+                    val dt = dx / pxPerSec
+                    val w = captions[blockIdx]
+                    captions[blockIdx] = when (mode) {
+                        2 -> Word((w.s + dt).coerceIn(0.0, w.e - 0.1), w.e, w.w)
+                        3 -> Word(w.s, (w.e + dt).coerceAtLeast(w.s + 0.1), w.w)
+                        else -> Word((w.s + dt).coerceAtLeast(0.0), (w.e + dt).coerceAtLeast(0.1), w.w)
+                    }
+                    invalidate(); onEdited?.invoke()
+                } else {
+                    scrollX = (scrollX - dx).coerceAtLeast(0f); invalidate(); onSeek?.invoke(currentTime())
+                }
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (!dragging) handleTap(e.x, e.y)
+                if (!dragging) {
+                    if (blockIdx >= 0) onSelect?.invoke(1, blockIdx)
+                    else handleTap(e.x, e.y)
+                }
+                mode = 0; blockIdx = -1
                 return true
             }
         }
@@ -111,9 +145,6 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
     private fun handleTap(px: Float, py: Float) {
         val ri = ((py - 30f) / rowH).toInt()
         val t = ((px - labelW + scrollX) / pxPerSec).toDouble()
-        when (ri) {
-            1 -> captions.indexOfFirst { t >= it.s && t <= it.e }.takeIf { it >= 0 }?.let { onSelect?.invoke(1, it) }
-            2 -> broll.indexOfFirst { t >= it.start && t <= it.end }.takeIf { it >= 0 }?.let { onSelect?.invoke(2, it) }
-        }
+        if (ri == 2) broll.indexOfFirst { t >= it.start && t <= it.end }.takeIf { it >= 0 }?.let { onSelect?.invoke(2, it) }
     }
 }

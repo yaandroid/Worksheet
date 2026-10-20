@@ -24,7 +24,11 @@ class AutoEditEngine(private val ctx: Context) {
         val music: Boolean = false,
         val bgMode: String = "none",      // none | green  (ai handled as a pre-pass)
         val bgColor: String = "#0a1a33",
-        val greenKey: String = "0x00D000" // chroma key colour for green screen
+        val greenKey: String = "0x00D000", // chroma key colour for green screen
+        val fontChoice: String = "",       // caption font (English): "", Anton, Bebas Neue
+        val textBg: Boolean = false,       // caption background box
+        val textBgColor: String = "#000000",
+        val highlight: String = ""         // override theme highlight colour
     )
 
     interface Listener {
@@ -72,7 +76,9 @@ class AutoEditEngine(private val ctx: Context) {
             val t = Themes.byId(opt.theme)
             val fonts = fontsDir()
             val ass = File(ctx.cacheDir, "caps.ass")
-            ass.writeText(Captions.buildAss(words, t, opt.lang, keywords = keywords))
+            ass.writeText(Captions.buildAss(words, t, opt.lang, keywords = keywords,
+                fontChoice = opt.fontChoice, textBg = opt.textBg,
+                textBgColor = opt.textBgColor, highlight = opt.highlight))
             val out = File(ctx.getExternalFilesDir(null), "brahm_edit_${System.currentTimeMillis()}.mp4")
             val total = durationSec(input)
 

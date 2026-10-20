@@ -73,6 +73,25 @@
         <EditText android:id="@+id/etTag" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="HOMEOPATHY" android:inputType="text" android:textColor="#EEF2FF"/>
 
+        <TextView style="@style/Lbl" android:text="Caption font (English)"/>
+        <Spinner android:id="@+id/spFont" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/swTextBg" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Text background box" android:textColor="#EEF2FF" android:paddingTop="6dp"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+                <TextView style="@style/Lbl" android:text="BG box color"/>
+                <EditText android:id="@+id/etTextBgColor" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="#000000" android:inputType="text" android:textColor="#EEF2FF"/>
+            </LinearLayout>
+            <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+                <TextView style="@style/Lbl" android:text="Highlight color (khaali=theme)"/>
+                <EditText android:id="@+id/etHighlight" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:hint="#FFC400" android:inputType="text"
+                    android:textColor="#EEF2FF" android:textColorHint="#55608A"/>
+            </LinearLayout>
+        </LinearLayout>
+
         <TextView style="@style/Lbl" android:text="Groq API key (AI — device par save)"/>
         <EditText android:id="@+id/etGroqKey" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:hint="gsk_..." android:inputType="textPassword"

@@ -36,6 +36,7 @@ class TimelineActivity : AppCompatActivity() {
         b.tl.onSeek = { t -> if (!exported) { b.vv.seekTo((t * 1000).toInt()); b.ov.setTime(t) } }
 
         b.tl.onSelect = { track, index -> if (track == 1) editCaption(index) else editBroll(index) }
+        b.tl.onEdited = { b.ov.invalidate() }
         b.btnZoomIn.setOnClickListener { b.tl.zoomIn() }
         b.btnZoomOut.setOnClickListener { b.tl.zoomOut() }
         b.btnPlay.setOnClickListener { togglePlay() }
