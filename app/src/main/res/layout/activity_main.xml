@@ -21,6 +21,9 @@
             android:layout_height="wrap_content" android:text="koi file nahi"
             android:textColor="#9AA6CC" android:paddingBottom="10dp"/>
 
+        <TextView style="@style/Lbl" android:text="Template (ek-tap style — Custom = manual)"/>
+        <Spinner android:id="@+id/spTemplate" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
         <TextView style="@style/Lbl" android:text="Theme"/>
         <Spinner android:id="@+id/spTheme" android:layout_width="match_parent" android:layout_height="wrap_content"/>
 

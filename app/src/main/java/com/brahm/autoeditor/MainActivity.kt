@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
         b.spDenoise.setSelection(2)
         b.spBg.adapter = adapter(listOf("None", "Green screen (fast)", "AI remove (slow)"))
         b.spFont.adapter = adapter(listOf("Default (Poppins)", "Anton", "Bebas Neue"))
+        b.spTemplate.adapter = adapter(Templates.LIST.map { it.name })
         b.etBrand.setText(prefs.brand)
         b.etGroqKey.setText(prefs.groqKey)
         b.etPexels.setText(prefs.pexelsKey)
@@ -114,7 +115,7 @@ class MainActivity : AppCompatActivity() {
                 // hand off to the Edit & Preview screen (fix text/timing, then render)
                 Session.inputPath = input
                 Session.words = words.toMutableList()
-                Session.opt = opt
+                Session.opt = Templates.apply(opt, b.spTemplate.selectedItemPosition)
                 Session.wantBroll = b.swBroll.isChecked
                 Session.bgMode = when (b.spBg.selectedItemPosition) { 1 -> "green"; 2 -> "ai"; else -> "none" }
                 Session.wantAutoTheme = b.swAutoTheme.isChecked
