@@ -42,6 +42,16 @@
         </LinearLayout>
         <SeekBar android:id="@+id/sbPitch" android:layout_width="match_parent" android:layout_height="wrap_content"/>
 
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:paddingTop="8dp">
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/swBroll" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="Auto b-roll images" android:textColor="#EEF2FF"/>
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/swBg" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="BG remove" android:textColor="#EEF2FF"/>
+        </LinearLayout>
+
         <TextView style="@style/Lbl" android:text="Brand text"/>
         <EditText android:id="@+id/etBrand" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:inputType="text" android:textColor="#EEF2FF"/>
@@ -52,6 +62,11 @@
         <TextView style="@style/Lbl" android:text="Groq API key (AI — device par save)"/>
         <EditText android:id="@+id/etGroqKey" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:hint="gsk_..." android:inputType="textPassword"
+            android:textColor="#EEF2FF" android:textColorHint="#55608A"/>
+
+        <TextView style="@style/Lbl" android:text="Pexels API key (b-roll images — optional)"/>
+        <EditText android:id="@+id/etPexels" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="pexels key" android:inputType="textPassword"
             android:textColor="#EEF2FF" android:textColorHint="#55608A"/>
 
         <TextView style="@style/Lbl" android:text="Ya transcript paste karo (bina AI)"/>

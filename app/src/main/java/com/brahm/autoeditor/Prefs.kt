@@ -17,4 +17,7 @@ class Prefs(ctx: Context) {
     var brand: String
         get() = sp.getString("brand", "BRAHM") ?: "BRAHM"
         set(v) { sp.edit().putString("brand", v).apply() }
+    var pexelsKey: String
+        get() = sp.getString("pexels_key", "") ?: ""
+        set(v) { sp.edit().putString("pexels_key", v).apply() }
 }

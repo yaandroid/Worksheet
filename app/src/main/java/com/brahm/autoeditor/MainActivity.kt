@@ -20,6 +20,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var b: ActivityMainBinding
     private lateinit var prefs: Prefs
     private var inputPath: String? = null
+    private var outputPath: String? = null
 
     private val langCodes = listOf("en", "hi", "gu", "mr", "bn", "ta", "te", "kn", "ml", "pa")
     private val langNames = listOf("English", "Hindi", "Gujarati", "Marathi", "Bengali",
@@ -42,12 +43,11 @@ class MainActivity : AppCompatActivity() {
         b.spDenoise.setSelection(2)
         b.etBrand.setText(prefs.brand)
         b.etGroqKey.setText(prefs.groqKey)
+        b.etPexels.setText(prefs.pexelsKey)
         b.spLang.setSelection(langCodes.indexOf(prefs.lang).coerceAtLeast(0))
         b.spTheme.setSelection(Themes.ALL.indexOfFirst { it.id == prefs.theme }.coerceAtLeast(0))
 
-        b.sbPitch.max = 12
-        b.sbPitch.progress = 6
-        b.tvPitch.text = "0"
+        b.sbPitch.max = 12; b.sbPitch.progress = 6; b.tvPitch.text = "0"
         b.sbPitch.setOnSeekBarChangeListenerSimple { b.tvPitch.text = (it - 6).toString() }
 
         b.btnPick.setOnClickListener { pickVideo.launch("video/*") }
@@ -72,28 +72,28 @@ class MainActivity : AppCompatActivity() {
         r.release(); ms / 1000.0
     } catch (e: Exception) { 0.0 }
 
-    private var outputPath: String? = null
-
     private fun start() {
         val input = inputPath ?: run {
             Toast.makeText(this, "Pehle raw video daalo", Toast.LENGTH_SHORT).show(); return
         }
         prefs.brand = b.etBrand.text.toString()
         prefs.groqKey = b.etGroqKey.text.toString()
+        prefs.pexelsKey = b.etPexels.text.toString()
         prefs.theme = Themes.ALL[b.spTheme.selectedItemPosition].id
         prefs.lang = langCodes[b.spLang.selectedItemPosition]
 
         val opt = AutoEditEngine.Options(
-            theme = prefs.theme,
-            lang = prefs.lang,
+            theme = prefs.theme, lang = prefs.lang,
             denoise = denoiseVals[b.spDenoise.selectedItemPosition],
             voiceClear = b.swVoice.isChecked,
             pitch = (b.sbPitch.progress - 6).toDouble(),
             brand = b.etBrand.text.toString().ifBlank { "BRAHM" },
-            tag = b.etTag.text.toString().ifBlank { "HOMEOPATHY" }
-        )
+            tag = b.etTag.text.toString().ifBlank { "HOMEOPATHY" })
         val manual = b.etTranscript.text.toString()
         val apiKey = b.etGroqKey.text.toString()
+        val pexels = b.etPexels.text.toString()
+        val wantBroll = b.swBroll.isChecked
+        val wantBg = b.swBg.isChecked
         setBusy(true, "Transcribing…", 10)
 
         lifecycleScope.launch {
@@ -104,18 +104,34 @@ class MainActivity : AppCompatActivity() {
                     else tr.transcribe(input, apiKey, prefs.lang)
                 }
                 if (words.isEmpty()) throw RuntimeException("No speech / transcript.")
-                AutoEditEngine(this@MainActivity).render(input, words, opt, object : AutoEditEngine.Listener {
-                    override fun onProgress(pct: Int, step: String) = runOnUiThread { setBusy(true, step, pct) }
-                    override fun onDone(outputPathArg: String) = runOnUiThread {
-                        outputPath = outputPathArg
-                        setBusy(false, "Ready ✓", 100)
-                        b.vv.setVideoPath(outputPathArg); b.vv.start()
-                        b.btnShare.isEnabled = true
+
+                // b-roll images (keyword -> image), if enabled
+                val broll = if (wantBroll) withContext(Dispatchers.IO) {
+                    runOnUiThread { setBusy(true, "b-roll images…", 30) }
+                    Broll.resolve(this@MainActivity, Keywords.extract(words), pexels, useAi = true)
+                } else emptyList()
+
+                // background remove pre-pass, if enabled
+                var renderInput = input
+                if (wantBg) {
+                    renderInput = withContext(Dispatchers.IO) {
+                        BgRemover.run(this@MainActivity, input, "#0a1a33") { s, p ->
+                            runOnUiThread { setBusy(true, s, p) }
+                        }
                     }
-                    override fun onError(message: String) = runOnUiThread {
-                        setBusy(false, "Error: $message", 0)
-                    }
-                })
+                }
+
+                AutoEditEngine(this@MainActivity).render(renderInput, words, opt, broll,
+                    object : AutoEditEngine.Listener {
+                        override fun onProgress(pct: Int, step: String) = runOnUiThread { setBusy(true, step, pct) }
+                        override fun onDone(outputPathArg: String) = runOnUiThread {
+                            outputPath = outputPathArg
+                            setBusy(false, "Ready ✓", 100)
+                            b.vv.setVideoPath(outputPathArg); b.vv.start()
+                            b.btnShare.isEnabled = true
+                        }
+                        override fun onError(message: String) = runOnUiThread { setBusy(false, "Error: $message", 0) }
+                    })
             } catch (e: Exception) {
                 runOnUiThread { setBusy(false, "Error: ${e.message}", 0) }
             }
