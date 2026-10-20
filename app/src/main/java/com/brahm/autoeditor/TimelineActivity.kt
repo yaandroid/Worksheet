@@ -29,11 +29,37 @@ class TimelineActivity : AppCompatActivity() {
         val dur = durationSec(Session.inputPath ?: "")
         refreshTimeline(dur)
 
+        // live preview: raw video + overlay, scrub by dragging timeline
+        Session.inputPath?.let { b.vv.setVideoPath(it); b.vv.seekTo(1) }
+        b.ov.theme = Themes.byId(Session.opt.theme)
+        b.ov.brand = Session.opt.brand; b.ov.tag = Session.opt.tag
+        b.tl.onSeek = { t -> if (!exported) { b.vv.seekTo((t * 1000).toInt()); b.ov.setTime(t) } }
+
         b.tl.onSelect = { track, index -> if (track == 1) editCaption(index) else editBroll(index) }
         b.btnZoomIn.setOnClickListener { b.tl.zoomIn() }
         b.btnZoomOut.setOnClickListener { b.tl.zoomOut() }
+        b.btnPlay.setOnClickListener { togglePlay() }
         b.btnExport.setOnClickListener { export() }
         b.btnShare.setOnClickListener { share() }
+    }
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var playing = false
+    private var exported = false
+    private val tick = object : Runnable {
+        override fun run() {
+            if (!playing) return
+            val t = b.vv.currentPosition / 1000.0
+            if (!exported) { b.ov.setTime(t); b.tl.seekTo(t) }
+            if (b.vv.isPlaying) handler.postDelayed(this, 40) else { playing = false; b.btnPlay.text = "▶ Play" }
+        }
+    }
+    private fun togglePlay() {
+        if (playing) { b.vv.pause(); playing = false; b.btnPlay.text = "▶ Play" }
+        else {
+            if (!exported) b.vv.seekTo((b.tl.currentTime() * 1000).toInt())
+            b.vv.start(); playing = true; b.btnPlay.text = "⏸ Pause"; handler.post(tick)
+        }
     }
 
     private fun refreshTimeline(dur: Double) {
@@ -43,6 +69,7 @@ class TimelineActivity : AppCompatActivity() {
         b.tl.musicOn = Session.opt.music
         b.tl.totalSec = if (dur > 0) dur else (Session.words.lastOrNull()?.e ?: 10.0)
         b.tl.invalidate()
+        b.ov.words = Session.words; b.ov.keywords = kws; b.ov.invalidate()
     }
 
     private fun durationSec(path: String): Double = try {
@@ -105,6 +132,7 @@ class TimelineActivity : AppCompatActivity() {
                         override fun onProgress(pct: Int, step: String) = runOnUiThread { setBusy(true, step, pct) }
                         override fun onDone(o: String) = runOnUiThread {
                             outputPath = o; setBusy(false, "Export ready ✓", 100)
+                            exported = true; playing = false; b.ov.visibility = android.view.View.GONE
                             b.vv.setVideoPath(o); b.vv.start(); b.btnShare.isEnabled = true
                         }
                         override fun onError(m: String) = runOnUiThread { setBusy(false, "Error: $m", 0) }

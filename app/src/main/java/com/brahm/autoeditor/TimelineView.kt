@@ -22,9 +22,14 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
     var totalSec = 0.0
     var pxPerSec = 80f
     var onSelect: ((track: Int, index: Int) -> Unit)? = null
+    var onSeek: ((Double) -> Unit)? = null
 
     private var scrollX = 0f
     private val labelW = 120f
+    private val playheadX get() = labelW + 140f
+    fun currentTime(): Double = ((scrollX + (playheadX - labelW)) / pxPerSec).toDouble().coerceAtLeast(0.0)
+    fun seekTo(t: Double) { scrollX = (t * pxPerSec - (playheadX - labelW)).toFloat().coerceAtLeast(0f); invalidate() }
+    private val pHead = Paint().apply { color = Color.parseColor("#FF4D4D"); strokeWidth = 3f }
     private val rowH = 74f
     private val rows = listOf("Video", "Captions", "B-roll", "Music")
 
@@ -68,6 +73,8 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
                 3 -> if (musicOn) drawBlock(c, 0.0, totalSec, top, bp, "music")
             }
         }
+        // fixed playhead
+        c.drawLine(playheadX, 0f, playheadX, height.toFloat(), pHead)
     }
 
     private fun drawBlock(c: Canvas, a: Double, b: Double, top: Float, p: Paint, label: String, dark: Boolean = false) {
@@ -89,7 +96,8 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
             MotionEvent.ACTION_MOVE -> {
                 if (abs(e.x - downX) > 12) { dragging = true
                     scrollX = (scrollX - (e.x - downX)).coerceAtLeast(0f)
-                    downX = e.x; invalidate() }
+                    downX = e.x; invalidate()
+                    onSeek?.invoke(currentTime()) }
                 return true
             }
             MotionEvent.ACTION_UP -> {
