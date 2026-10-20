@@ -7,29 +7,28 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Find a downloadable ffmpeg-kit AAR
-        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+      - name: Probe archive.org + jitpack for ffmpeg-kit aar
         run: |
-          mkdir -p /tmp/out
-          P=/tmp/out/probe.txt; : > $P
-          echo "== code search: ffmpeg-kit-full aar ==" >> $P
-          for q in "ffmpeg-kit-full-6.0-2.aar" "ffmpeg-kit-full-6.0.LTS.aar" "filename:ffmpeg-kit-full.aar" "ffmpeg-kit-full extension:aar"; do
-            echo "-- q=$q --" >> $P
-            curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/search/code?q=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$q")&per_page=8" \
-              | python3 -c "import sys,json;d=json.load(sys.stdin);print('total',d.get('total_count','ERR',));[print(i['repository']['full_name'],i['path'],i.get('html_url','')) for i in d.get('items',[])[:8]]" >> $P 2>>$P || echo "search err" >> $P
+          mkdir -p /tmp/out; P=/tmp/out/probe.txt; : > $P
+          echo "== Wayback availability API ==" >> $P
+          for v in 6.0-2 6.0.LTS 5.1.LTS 5.1 4.5.1.LTS; do
+            orig="https://repo1.maven.org/maven2/com/arthenica/ffmpeg-kit-full/$v/ffmpeg-kit-full-$v.aar"
+            echo "-- v=$v --" >> $P
+            curl -s "https://archive.org/wayback/available?url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$orig")" >> $P; echo "" >> $P
           done
-          echo "" >> $P
-          echo "== direct URL checks (known rehosts/mirrors) ==" >> $P
-          for u in \
-            "https://repo1.maven.org/maven2/com/arthenica/mobile-ffmpeg-full/4.4.LTS/mobile-ffmpeg-full-4.4.LTS.aar" \
-            "https://repo1.maven.org/maven2/com/arthenica/smart-exception-java/0.2.1/smart-exception-java-0.2.1.jar" \
-            "https://repo1.maven.org/maven2/com/arthenica/smart-exception-common/0.2.1/smart-exception-common-0.2.1.jar" \
-            ; do echo "$(curl -s -o /dev/null -w '%{http_code}' -L "$u")  $u" >> $P; done
+          echo "== direct wayback id_ fetch HEAD codes ==" >> $P
+          for v in 6.0-2 6.0.LTS; do
+            u="https://web.archive.org/web/2id_/https://repo1.maven.org/maven2/com/arthenica/ffmpeg-kit-full/$v/ffmpeg-kit-full-$v.aar"
+            echo "$(curl -s -o /dev/null -w '%{http_code} size=%{size_download}' -L "$u")  v=$v" >> $P
+          done
+          echo "== jitpack fork candidates (metadata) ==" >> $P
+          for ga in "com.github.tanersener/ffmpeg-kit" "com.github.arthenica/ffmpeg-kit"; do
+            owner=${ga%%/*}; name=${ga##*/}
+            echo "$(curl -s -o /dev/null -w '%{http_code}' "https://jitpack.io/api/builds/$ga")  $ga" >> $P
+          done
       - name: Publish probe
         if: always()
         run: |
           cd /tmp/out; git init -q; git checkout -b ci-output; git add -A
-          git -c user.email=ci@brahm -c user.name=CI commit -q -m "probe2 ${GITHUB_SHA}"
+          git -c user.email=ci@brahm -c user.name=CI commit -q -m "probe3 ${GITHUB_SHA}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-output
