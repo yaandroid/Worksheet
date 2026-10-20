@@ -44,6 +44,8 @@ class MainActivity : AppCompatActivity() {
         b.spBg.adapter = adapter(listOf("None", "Green screen (fast)", "AI remove (slow)"))
         b.spFont.adapter = adapter(listOf("Default (Poppins)", "Anton", "Bebas Neue"))
         b.spTemplate.adapter = adapter(Templates.LIST.map { it.name })
+        b.spCapPos.adapter = adapter(listOf("Bottom", "Lower", "Middle", "Upper"))
+        b.spCapPos.setSelection(0)
         b.etBrand.setText(prefs.brand)
         b.etGroqKey.setText(prefs.groqKey)
         b.etPexels.setText(prefs.pexelsKey)
@@ -99,7 +101,9 @@ class MainActivity : AppCompatActivity() {
             textBg = b.swTextBg.isChecked,
             textBgColor = b.etTextBgColor.text.toString().ifBlank { "#000000" },
             highlight = b.etHighlight.text.toString().trim(),
-            pip = b.swPip.isChecked)
+            pip = b.swPip.isChecked,
+            popText = b.swPop.isChecked,
+            captionMargin = when (b.spCapPos.selectedItemPosition) { 0 -> 160; 2 -> 850; 3 -> 1300; else -> 430 })
         val manual = b.etTranscript.text.toString()
         val apiKey = b.etGroqKey.text.toString()
         setBusy(true, "Transcribing…", 20)

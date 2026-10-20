@@ -29,7 +29,9 @@ class AutoEditEngine(private val ctx: Context) {
         val textBg: Boolean = false,       // caption background box
         val textBgColor: String = "#000000",
         val highlight: String = "",        // override theme highlight colour
-        val pip: Boolean = false           // b-roll fullscreen + speaker circle (PiP)
+        val pip: Boolean = false,          // b-roll fullscreen + speaker circle (PiP)
+        val popText: Boolean = false,      // big keyword pop-text (off = no duplicate word)
+        val captionMargin: Int = 430       // caption distance from bottom (position)
     )
 
     interface Listener {
@@ -77,9 +79,11 @@ class AutoEditEngine(private val ctx: Context) {
             val t = Themes.byId(opt.theme)
             val fonts = fontsDir()
             val ass = File(ctx.cacheDir, "caps.ass")
-            ass.writeText(Captions.buildAss(words, t, opt.lang, keywords = keywords,
+            ass.writeText(Captions.buildAss(words, t, opt.lang,
+                keywords = if (opt.popText) keywords else emptyList(),
                 fontChoice = opt.fontChoice, textBg = opt.textBg,
-                textBgColor = opt.textBgColor, highlight = opt.highlight))
+                textBgColor = opt.textBgColor, highlight = opt.highlight,
+                marginV = opt.captionMargin))
             val out = File(ctx.getExternalFilesDir(null), "brahm_edit_${System.currentTimeMillis()}.mp4")
             val total = durationSec(input)
 

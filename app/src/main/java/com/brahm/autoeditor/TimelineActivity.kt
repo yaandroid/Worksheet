@@ -33,6 +33,7 @@ class TimelineActivity : AppCompatActivity() {
         Session.inputPath?.let { b.vv.setVideoPath(it); b.vv.seekTo(1) }
         b.ov.theme = Themes.byId(Session.opt.theme)
         b.ov.brand = Session.opt.brand; b.ov.tag = Session.opt.tag
+        b.ov.popText = Session.opt.popText; b.ov.captionMargin = Session.opt.captionMargin
         b.tl.onSeek = { t -> if (!exported) { b.vv.seekTo((t * 1000).toInt()); b.ov.setTime(t) } }
 
         b.tl.onSelect = { track, index -> if (track == 1) editCaption(index) else editBroll(index) }

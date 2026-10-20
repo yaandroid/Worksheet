@@ -4,14 +4,13 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 
-/** Live preview overlay — draws captions (active word highlighted), keyword pop,
- *  branding and a b-roll placeholder for the current time t, over the video frame.
- *  Approximate (not pixel-identical to export) but real-time, no FFmpeg. */
+/** Live preview overlay — maps the 1080x1920 design onto the letterboxed 9:16
+ *  video area, so what you see matches the export. Draws captions (active word
+ *  highlighted), optional keyword pop, and branding for the current time t. */
 class PreviewOverlayView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = null, d: Int = 0)
     : View(ctx, a, d) {
 
@@ -19,6 +18,8 @@ class PreviewOverlayView @JvmOverloads constructor(ctx: Context, a: AttributeSet
     var keywords: List<Keywords.Hit> = emptyList()
     var theme: Theme = Themes.ALL[0]
     var brand = "BRAHM"; var tag = "HOMEOPATHY"
+    var popText = false
+    var captionMargin = 430
     private var t = 0.0
     fun setTime(x: Double) { t = x; invalidate() }
 
@@ -26,55 +27,47 @@ class PreviewOverlayView @JvmOverloads constructor(ctx: Context, a: AttributeSet
     private val pOut = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER; style = Paint.Style.STROKE }
     private val pBrand = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.RIGHT; color = Color.WHITE }
     private val pPop = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER }
-    private val pCircle = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
     private fun col(hex: String): Int = try { Color.parseColor(hex) } catch (e: Exception) { Color.WHITE }
 
     override fun onDraw(c: Canvas) {
-        val sx = width / 1080f
+        // compute the 9:16 video rect centred in this view
+        var vw = width.toFloat(); var vh = vw * 16f / 9f
+        if (vh > height) { vh = height.toFloat(); vw = vh * 9f / 16f }
+        val ox = (width - vw) / 2f; val oy = (height - vh) / 2f
+        val sc = vw / 1080f
         val cs = theme.caption
 
-        // b-roll placeholder (active keyword) — upper circle
-        keywords.firstOrNull { t >= it.start && t <= it.end }?.let { k ->
-            val cx = width / 2f; val cy = 250 * sx + 300 * sx; val r = 300 * sx
-            pCircle.color = col(cs.highlight); pCircle.alpha = 60
-            c.drawCircle(cx, cy, r, pCircle)
-            pPop.color = Color.WHITE; pPop.textSize = 44 * sx
-            c.drawText("[${k.keyword}]", cx, cy, pPop)
+        // keyword pop-text (optional)
+        if (popText) keywords.firstOrNull { t >= it.start && t <= it.start + 1.4 }?.let { k ->
+            pPop.color = if (cs.highlight.isNotBlank()) col(cs.highlight) else Color.YELLOW
+            pPop.textSize = 110 * sc
+            c.drawText(k.keyword, ox + vw / 2f, oy + 460 * sc, pPop)
         }
 
-        // keyword pop-text (top)
-        keywords.firstOrNull { t >= it.start && t <= it.start + 1.4 }?.let { k ->
-            pPop.color = col(cs.highlight); pPop.textSize = 110 * sx
-            c.drawText(k.keyword, width / 2f, 460 * sx, pPop)
-        }
-
-        // caption line (bottom) with active word highlighted
+        // caption line with active word highlighted
         val visible = words.filter { it.e >= t - 0.05 && it.s <= t + 1.1 }.take(4)
         if (visible.isNotEmpty()) {
-            val y = height - cs.marginV * sx
-            val size = cs.size * sx
-            pCap.textSize = size; pOut.textSize = size; pOut.strokeWidth = cs.outlineW * sx
+            val y = oy + vh - captionMargin * sc
+            val size = cs.size * sc
+            pCap.textSize = size; pOut.textSize = size; pOut.strokeWidth = (cs.outlineW + 1) * sc
             pOut.color = col(cs.outline)
-            // measure total width
             val widths = visible.map { pCap.measureText(it.w + " ") }
-            val totalW = widths.sum()
-            var x = width / 2f - totalW / 2f
+            var x = ox + vw / 2f - widths.sum() / 2f
             for ((i, w) in visible.withIndex()) {
                 val active = t >= w.s && t <= w.e
                 pCap.color = if (active) col(cs.highlight) else col(cs.primary)
-                val wtxt = w.w + " "
                 val cx = x + widths[i] / 2f
-                c.drawText(wtxt, cx, y, pOut)
-                c.drawText(wtxt, cx, y, pCap)
+                c.drawText(w.w + " ", cx, y, pOut)
+                c.drawText(w.w + " ", cx, y, pCap)
                 x += widths[i]
             }
         }
 
-        // branding (top-right)
-        pBrand.textSize = 46 * sx
-        c.drawText(brand, width - 46 * sx, 54 * sx + 40 * sx, pBrand)
-        pBrand.textSize = 20 * sx; pBrand.alpha = 230
-        c.drawText(tag, width - 46 * sx, 108 * sx + 20 * sx, pBrand); pBrand.alpha = 255
+        // branding (top-right of the video area)
+        pBrand.textSize = 46 * sc
+        c.drawText(brand, ox + vw - 46 * sc, oy + 94 * sc, pBrand)
+        pBrand.textSize = 20 * sc; pBrand.alpha = 230
+        c.drawText(tag, ox + vw - 46 * sc, oy + 128 * sc, pBrand); pBrand.alpha = 255
     }
 }

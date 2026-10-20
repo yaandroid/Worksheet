@@ -97,6 +97,12 @@
             </LinearLayout>
         </LinearLayout>
 
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/swPop" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Keyword pop-text (bada shabd)" android:textColor="#EEF2FF" android:paddingTop="6dp"/>
+        <TextView style="@style/Lbl" android:text="Caption position (neeche/upar)"/>
+        <Spinner android:id="@+id/spCapPos" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
         <TextView style="@style/Lbl" android:text="Groq API key (AI — device par save)"/>
         <EditText android:id="@+id/etGroqKey" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:hint="gsk_..." android:inputType="textPassword"
