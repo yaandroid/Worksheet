@@ -25,8 +25,12 @@
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal" android:paddingTop="6dp">
-        <Button android:id="@+id/btnPlay" android:layout_width="0dp" android:layout_weight="1"
+        <Button android:id="@+id/btnPlay" android:layout_width="0dp" android:layout_weight="1.4"
             android:layout_height="wrap_content" android:text="▶ Play"/>
+        <Button android:id="@+id/btnAddVid" android:layout_width="0dp" android:layout_weight="1.3"
+            android:layout_height="wrap_content" android:text="➕🎬"/>
+        <Button android:id="@+id/btnAddImg" android:layout_width="0dp" android:layout_weight="1.3"
+            android:layout_height="wrap_content" android:text="➕🖼"/>
         <Button android:id="@+id/btnZoomOut" android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:text="➖"/>
         <Button android:id="@+id/btnZoomIn" android:layout_width="0dp" android:layout_weight="1"
@@ -37,13 +41,12 @@
         android:layout_marginTop="6dp" android:scrollbars="none">
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:orientation="horizontal">
+            <Button android:id="@+id/btnTTrim" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="✂ Trim" android:textColor="#EEF2FF"/>
+            <Button android:id="@+id/btnTAudio" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🎵 Music" android:textColor="#EEF2FF"/>
             <Button android:id="@+id/btnTText" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🅣 Text" android:textColor="#EEF2FF"/>
-            <Button android:id="@+id/btnTAudio" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🎵 Audio" android:textColor="#EEF2FF"/>
-            <Button android:id="@+id/btnTBroll" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🖼 B-roll" android:textColor="#EEF2FF"/>
-            <Button android:id="@+id/btnTTheme" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🎨 Theme" android:textColor="#EEF2FF"/>
-            <Button android:id="@+id/btnTBg" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🌀 BG" android:textColor="#EEF2FF"/>
-            <Button android:id="@+id/btnTFx" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="✨ FX" android:textColor="#EEF2FF"/>
-            <Button android:id="@+id/btnTTemplate" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⚡ Template" android:textColor="#EEF2FF"/>
+            <Button android:id="@+id/btnTAdjust" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🎚 Adjust" android:textColor="#EEF2FF"/>
+            <Button android:id="@+id/btnTFilter" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🎞 Filter" android:textColor="#EEF2FF"/>
+            <Button android:id="@+id/btnTFrame" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🖼 Frame" android:textColor="#EEF2FF"/>
         </LinearLayout>
     </HorizontalScrollView>
 

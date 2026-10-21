@@ -74,6 +74,159 @@ class AutoEditEngine(private val ctx: Context) {
         return s
     }
 
+    /** atempo accepts 0.5..2.0; chain factors to reach any speed. */
+    private fun atempoChain(speed: Double): String {
+        var s = speed.coerceIn(0.1, 8.0)
+        val parts = ArrayList<String>()
+        while (s > 2.0) { parts.add("atempo=2.0"); s /= 2.0 }
+        while (s < 0.5) { parts.add("atempo=0.5"); s /= 0.5 }
+        parts.add("atempo=%.5f".format(s))
+        return parts.joinToString(",")
+    }
+
+    /** Multi-clip compose: each clip (video/image) trimmed, sped, cropped, then
+     *  concatenated; captions / grade / b-roll / branding / music over the result. */
+    fun renderMulti(clips: List<Clip>, words: List<Word>, opt: Options,
+                    broll: List<Broll.Placed>, keywords: List<Keywords.Hit>, listener: Listener) {
+        try {
+            if (clips.isEmpty()) { listener.onError("No clips"); return }
+            val t = Themes.byId(opt.theme)
+            val fonts = fontsDir()
+            val total = clips.sumOf { it.outDur() }
+            val ass = File(ctx.cacheDir, "caps.ass")
+            ass.writeText(Captions.buildAss(words, t, opt.lang,
+                keywords = if (opt.popText) keywords else emptyList(),
+                fontChoice = opt.fontChoice, textBg = opt.textBg,
+                textBgColor = opt.textBgColor, highlight = opt.highlight,
+                marginV = opt.captionMargin))
+            val out = File(ctx.getExternalFilesDir(null), "brahm_edit_${System.currentTimeMillis()}.mp4")
+
+            val args = ArrayList<String>(); args.add("-y")
+            val fc = StringBuilder()
+            // ---- per-clip inputs + branches ----
+            for (c in clips) {
+                if (c.isImage) { args.addAll(listOf("-loop", "1", "-t", "%.3f".format(c.imageDur))) }
+                args.add("-i"); args.add(c.path)
+            }
+            val crop = { fit: Boolean ->
+                if (fit) "scale=$W:$H:force_original_aspect_ratio=decrease," +
+                    "pad=$W:$H:(ow-iw)/2:(oh-ih)/2:color=black"
+                else "scale=$W:$H:force_original_aspect_ratio=increase,crop=$W:$H"
+            }
+            for ((i, c) in clips.withIndex()) {
+                val adj = if (c.adjust.isNotBlank()) ",${c.adjust}" else ""
+                if (c.isImage) {
+                    val z = if (c.speed != 1.0) ",setpts=PTS/${c.speed}" else ""
+                    fc.append("[$i:v]${crop(c.fit)}$adj,fps=$FPS,setsar=1,format=yuv420p$z[v$i];")
+                    fc.append("anullsrc=r=44100:cl=stereo,atrim=duration=${"%.3f".format(c.outDur())}," +
+                        "asetpts=PTS-STARTPTS[a$i];")
+                } else {
+                    fc.append("[$i:v]trim=${"%.3f".format(c.srcIn)}:${"%.3f".format(c.srcOut)}," +
+                        "setpts=(PTS-STARTPTS)/${c.speed},${crop(c.fit)}$adj," +
+                        "fps=$FPS,setsar=1,format=yuv420p[v$i];")
+                    if (c.volume > 0.001) {
+                        fc.append("[$i:a]atrim=${"%.3f".format(c.srcIn)}:${"%.3f".format(c.srcOut)}," +
+                            "asetpts=PTS-STARTPTS,${atempoChain(c.speed)},volume=${"%.3f".format(c.volume)}," +
+                            "aformat=sample_rates=44100:channel_layouts=stereo[a$i];")
+                    } else {
+                        fc.append("anullsrc=r=44100:cl=stereo,atrim=duration=${"%.3f".format(c.outDur())}," +
+                            "asetpts=PTS-STARTPTS[a$i];")
+                    }
+                }
+            }
+            // ---- concat ----
+            val cc = StringBuilder()
+            for (i in clips.indices) cc.append("[v$i][a$i]")
+            fc.append(cc).append("concat=n=${clips.size}:v=1:a=1[cv][ca];")
+
+            // ---- grade / green screen on the composed video ----
+            var cur = "cv"
+            if (opt.bgMode == "green") {
+                val bgc = opt.bgColor.removePrefix("#")
+                fc.append("[cv]chromakey=${opt.greenKey}:0.30:0.12[keyed];")
+                fc.append("color=c=0x$bgc:s=${W}x${H}[bgc];")
+                fc.append("[bgc][keyed]overlay[kd];")
+                fc.append("[kd]${t.grade}[g];"); cur = "g"
+            } else {
+                fc.append("[cv]${t.grade}[g];"); cur = "g"
+            }
+
+            // ---- b-roll overlays (card or PiP) over composed ----
+            if (opt.pip && broll.isNotEmpty()) {
+                val n = broll.size; val diam = 360
+                fc.append("[$cur]split=2[bmain][bpsrc];")
+                fc.append("[bpsrc]scale=$diam:$diam:force_original_aspect_ratio=increase,crop=$diam:$diam," +
+                    "format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':" +
+                    "a='if(gt(hypot(X-$diam/2,Y-$diam/2),$diam/2),0,255)'[spk];")
+                fc.append("[spk]split=$n" + (0 until n).joinToString("") { "[spk$it]" } + ";")
+                cur = "bmain"
+                for ((k, p) in broll.withIndex()) {
+                    args.add("-i"); args.add(p.imagePath)
+                    val vi = countInputs(args) - 1
+                    fc.append("[$vi:v]scale=$W:$H:force_original_aspect_ratio=increase,crop=$W:$H[imf$k];")
+                    fc.append("[$cur][imf$k]overlay=enable='between(t,${p.start},${p.end})'[of$k];")
+                    fc.append("[of$k][spk$k]overlay=x=${(W - diam) / 2}:y=${H - diam - 240}:" +
+                        "enable='between(t,${p.start},${p.end})'[op$k];")
+                    cur = "op$k"
+                }
+            } else {
+                val box = 640; val bx = (W - box) / 2; val by = 250
+                for ((k, p) in broll.withIndex()) {
+                    args.add("-i"); args.add(p.imagePath)
+                    val vi = countInputs(args) - 1
+                    fc.append("[$vi:v]scale=$box:$box:force_original_aspect_ratio=increase,crop=$box:$box," +
+                        "format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':" +
+                        "a='if(gt(hypot(X-$box/2,Y-$box/2),$box/2),0,255)'[im$k];")
+                    fc.append("[$cur][im$k]overlay=x=$bx:y=$by:enable='between(t,${p.start},${p.end})'[o$k];")
+                    cur = "o$k"
+                }
+            }
+
+            // ---- captions + branding ----
+            fc.append("[$cur]subtitles='${ass.absolutePath}':fontsdir='${fonts.absolutePath}'," +
+                "${branding(t, opt.brand, opt.tag, fonts, opt.aiMark)},format=yuv420p[v];")
+
+            // ---- audio: chain + optional music ----
+            val af = AudioChain.build(opt.denoise, opt.voiceClear, opt.pitch)
+            if (opt.music) {
+                val T = if (total > 0) total else 60.0
+                args.addAll(listOf("-f", "lavfi", "-t", "$T", "-i", "sine=frequency=174.61:sample_rate=44100"))
+                args.addAll(listOf("-f", "lavfi", "-t", "$T", "-i", "sine=frequency=261.63:sample_rate=44100"))
+                val iA = countInputs(args) - 2; val iB = countInputs(args) - 1
+                fc.append("[ca]$af[voc];")
+                fc.append("[$iA:a][$iB:a]amix=inputs=2,volume=0.10,lowpass=f=2600[mus];")
+                fc.append("[voc]asplit=2[vout][vsc];")
+                fc.append("[mus][vsc]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=320[musd];")
+                fc.append("[vout][musd]amix=inputs=2:normalize=0,alimiter=limit=0.97[a]")
+            } else {
+                fc.append("[ca]$af[a]")
+            }
+
+            args.addAll(listOf("-filter_complex", fc.toString(), "-map", "[v]", "-map", "[a]",
+                "-s", "${opt.outW}x${opt.outH}",
+                "-r", FPS.toString(), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart",
+                out.absolutePath))
+
+            listener.onProgress(70, "editing (${clips.size} clips, captions, audio)")
+            FFmpegKit.executeWithArgumentsAsync(args.toTypedArray(), { session ->
+                if (ReturnCode.isSuccess(session.returnCode)) {
+                    listener.onProgress(100, "ready"); listener.onDone(out.absolutePath)
+                } else listener.onError("FFmpeg failed: ${session.failStackTrace ?: session.returnCode}")
+            }, { }, { stat ->
+                if (total > 0) {
+                    val pct = (70 + 30.0 * (stat.time / 1000.0) / total).toInt().coerceIn(70, 99)
+                    listener.onProgress(pct, "editing…")
+                }
+            })
+        } catch (e: Exception) {
+            listener.onError(e.message ?: "engine error")
+        }
+    }
+
+    /** number of -i inputs currently in the args list */
+    private fun countInputs(args: List<String>): Int = args.count { it == "-i" }
+
     fun render(input: String, words: List<Word>, opt: Options,
                broll: List<Broll.Placed>, keywords: List<Keywords.Hit>, listener: Listener) {
         try {

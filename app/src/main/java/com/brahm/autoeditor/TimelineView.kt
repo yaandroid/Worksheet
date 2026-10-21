@@ -18,6 +18,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
 
     var captions: MutableList<Word> = mutableListOf()
     var broll: MutableList<Broll.Placed> = mutableListOf()
+    var clips: MutableList<Clip> = mutableListOf()
     var musicOn = false
     var totalSec = 0.0
     var pxPerSec = 80f
@@ -67,7 +68,17 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
             c.drawText(name, 8f, top + rowH / 2, pLabel)
             val bp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = blockPaints[ri] }
             when (ri) {
-                0 -> drawBlock(c, 0.0, totalSec, top, bp, "video")
+                0 -> {
+                    if (clips.isEmpty()) drawBlock(c, 0.0, totalSec, top, bp, "video")
+                    else {
+                        var st = 0.0
+                        for ((ci, cl) in clips.withIndex()) {
+                            val d = cl.outDur()
+                            drawBlock(c, st, st + d, top, bp, if (cl.isImage) "🖼${ci + 1}" else "▶${ci + 1}")
+                            st += d
+                        }
+                    }
+                }
                 1 -> for (w in captions) drawBlock(c, w.s, w.e, top, bp, w.w, true)
                 2 -> for (p in broll) drawBlock(c, p.start, p.end, top, bp, "img")
                 3 -> if (musicOn) drawBlock(c, 0.0, totalSec, top, bp, "music")
@@ -148,6 +159,14 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
     private fun handleTap(px: Float, py: Float) {
         val ri = ((py - 30f) / rowH).toInt()
         val t = ((px - labelW + scrollX) / pxPerSec).toDouble()
+        if (ri == 0 && clips.isNotEmpty()) {
+            var st = 0.0
+            for ((ci, cl) in clips.withIndex()) {
+                val d = cl.outDur()
+                if (t >= st && t <= st + d) { onSelect?.invoke(0, ci); return }
+                st += d
+            }
+        }
         if (ri == 2) broll.indexOfFirst { t >= it.start && t <= it.end }.takeIf { it >= 0 }?.let { onSelect?.invoke(2, it) }
     }
 }

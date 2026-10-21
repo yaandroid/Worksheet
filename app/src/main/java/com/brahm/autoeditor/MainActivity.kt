@@ -68,7 +68,11 @@ class MainActivity : AppCompatActivity() {
                     else tr.transcribe(input, apiKey, prefs.lang)
                 }
                 if (words.isEmpty()) throw RuntimeException("No speech / transcript.")
+                val dur = durationSec(input)
                 Session.inputPath = input
+                Session.clips = mutableListOf(
+                    Clip(path = input, isImage = false, srcIn = 0.0, srcOut = dur,
+                        srcDur = dur, label = "clip 1"))
                 Session.words = words.toMutableList()
                 Session.opt = AutoEditEngine.Options(lang = prefs.lang, captionMargin = 160)
                 Session.groqKey = apiKey
