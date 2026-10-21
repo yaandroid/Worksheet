@@ -59,7 +59,7 @@ class TimelineActivity : AppCompatActivity() {
 
         b.tl.onSeek = { t -> if (!exported) { b.vv.seekTo((t * 1000).toInt()); b.ov.setTime(t) } }
         b.tl.onSelect = { track, index ->
-            when (track) { 0 -> { selectedClip = index; clipSheet(index) }; 1 -> editCaption(index); 2 -> editBroll(index) }
+            when (track) { 0 -> { selectClip(index); clipSheet(index) }; 1 -> editCaption(index); 2 -> editBroll(index) }
         }
         b.tl.onEdited = { b.ov.invalidate() }
         b.tl.onEditBegin = { pushUndo() }
@@ -135,6 +135,15 @@ class TimelineActivity : AppCompatActivity() {
                     8 -> { if (Session.clips.size <= 1) { Toast.makeText(this, "Kam se kam 1 clip chahiye", Toast.LENGTH_SHORT).show() } else { pushUndo(); Session.clips.removeAt(i); selectedClip = -1; refreshTimeline() } }
                 }
             }.setNegativeButton("Band karo", null).show()
+    }
+
+    /** Select a clip: highlight on timeline + load it into the preview player. */
+    private fun selectClip(i: Int) {
+        selectedClip = i; b.tl.selectedClip = i; b.tl.invalidate()
+        val c = Session.clips.getOrNull(i) ?: return
+        if (exported) return
+        if (c.isImage) { b.ov.invalidate(); return }
+        try { b.vv.setVideoPath(c.path); b.vv.seekTo((c.srcIn * 1000).toInt().coerceAtLeast(1)) } catch (e: Exception) {}
     }
 
     private fun moveClip(i: Int, dir: Int) {
@@ -278,10 +287,23 @@ class TimelineActivity : AppCompatActivity() {
 
     /** Frame: theme / background / b-roll / template / set-cover in one place. */
     private fun frameDialog() {
-        val items = arrayOf("🎨 Theme", "🌀 Background (green-screen)", "🖼 Auto b-roll", "⚡ Template", "🖼 Set cover (poster)", "✨ AI auto-theme + pop-text")
+        val items = arrayOf("🎬 Transitions (clip ke beech)", "🎨 Theme", "🌀 Background (green-screen)", "🖼 Auto b-roll", "⚡ Template", "🖼 Set cover (poster)", "✨ AI auto-theme + pop-text")
         AlertDialog.Builder(this).setTitle("Frame / Style").setItems(items) { _, w ->
-            when (w) { 0 -> themeDialog(); 1 -> bgDialog(); 2 -> brollDialog(); 3 -> templateDialog(); 4 -> setCover(); 5 -> fxDialog() }
+            when (w) { 0 -> transitionDialog(); 1 -> themeDialog(); 2 -> bgDialog(); 3 -> brollDialog(); 4 -> templateDialog(); 5 -> setCover(); 6 -> fxDialog() }
         }.setNegativeButton("Cancel", null).show()
+    }
+    private val transitions = linkedMapOf(
+        "None (hard cut)" to "", "Fade" to "fade", "Fade black" to "fadeblack",
+        "Dissolve" to "dissolve", "Slide left" to "slideleft", "Slide right" to "slideright",
+        "Wipe left" to "wipeleft", "Circle open" to "circleopen", "Radial" to "radial")
+    private fun transitionDialog() {
+        val names = transitions.keys.toTypedArray()
+        val cur = transitions.values.indexOf(Session.opt.transition).coerceAtLeast(0)
+        AlertDialog.Builder(this).setTitle("Transitions (saari clips ke beech)")
+            .setSingleChoiceItems(names, cur) { d, w ->
+                pushUndo(); Session.opt = Session.opt.copy(transition = transitions.values.toList()[w]); d.dismiss()
+                Toast.makeText(this, "Transition: ${names[w]}", Toast.LENGTH_SHORT).show()
+            }.setNegativeButton("Cancel", null).show()
     }
     private fun setCover() {
         Session.coverSec = b.tl.currentTime()
@@ -352,6 +374,8 @@ class TimelineActivity : AppCompatActivity() {
         val kws = Keywords.extract(Session.words)
         b.tl.captions = Session.words
         b.tl.clips = Session.clips
+        if (selectedClip >= Session.clips.size) selectedClip = -1
+        b.tl.selectedClip = selectedClip
         b.tl.broll = kws.map { Broll.Placed("", it.start, it.end) }.toMutableList()
         b.tl.musicOn = Session.opt.music
         b.tl.totalSec = Session.totalDur()

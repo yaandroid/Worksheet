@@ -32,7 +32,8 @@ class AutoEditEngine(private val ctx: Context) {
         val pip: Boolean = false,          // b-roll fullscreen + speaker circle (PiP)
         val popText: Boolean = false,      // big keyword pop-text (off = no duplicate word)
         val captionMargin: Int = 430,      // caption distance from bottom (position)
-        val outW: Int = 1080, val outH: Int = 1920   // export resolution
+        val outW: Int = 1080, val outH: Int = 1920,  // export resolution
+        val transition: String = ""        // "" = hard cut (concat); else xfade type between clips
     )
 
     interface Listener {
@@ -134,21 +135,38 @@ class AutoEditEngine(private val ctx: Context) {
                     }
                 }
             }
-            // ---- concat ----
-            val cc = StringBuilder()
-            for (i in clips.indices) cc.append("[v$i][a$i]")
-            fc.append(cc).append("concat=n=${clips.size}:v=1:a=1[cv][ca];")
+            // ---- join clips: hard cut (concat) or crossfade transitions (xfade) ----
+            val vComposed: String; val aComposed: String
+            if (opt.transition.isNotBlank() && clips.size > 1) {
+                val durs = clips.map { it.outDur() }
+                val minDur = durs.min()
+                val d = minOf(0.6, minDur * 0.4).coerceAtLeast(0.1)
+                var vlab = "v0"; var alab = "a0"; var acc = durs[0]
+                for (k in 1 until clips.size) {
+                    val off = (acc - d).coerceAtLeast(0.0)
+                    fc.append("[$vlab][v$k]xfade=transition=${opt.transition}:duration=${"%.3f".format(d)}:" +
+                        "offset=${"%.3f".format(off)}[vx$k];")
+                    fc.append("[$alab][a$k]acrossfade=d=${"%.3f".format(d)}[ax$k];")
+                    vlab = "vx$k"; alab = "ax$k"; acc += durs[k] - d
+                }
+                vComposed = vlab; aComposed = alab
+            } else {
+                val cc = StringBuilder()
+                for (i in clips.indices) cc.append("[v$i][a$i]")
+                fc.append(cc).append("concat=n=${clips.size}:v=1:a=1[cv][ca];")
+                vComposed = "cv"; aComposed = "ca"
+            }
 
             // ---- grade / green screen on the composed video ----
-            var cur = "cv"
+            var cur = "g"
             if (opt.bgMode == "green") {
                 val bgc = opt.bgColor.removePrefix("#")
-                fc.append("[cv]chromakey=${opt.greenKey}:0.30:0.12[keyed];")
+                fc.append("[$vComposed]chromakey=${opt.greenKey}:0.30:0.12[keyed];")
                 fc.append("color=c=0x$bgc:s=${W}x${H}[bgc];")
                 fc.append("[bgc][keyed]overlay[kd];")
-                fc.append("[kd]${t.grade}[g];"); cur = "g"
+                fc.append("[kd]${t.grade}[g];")
             } else {
-                fc.append("[cv]${t.grade}[g];"); cur = "g"
+                fc.append("[$vComposed]${t.grade}[g];")
             }
 
             // ---- b-roll overlays (card or PiP) over composed ----
@@ -186,24 +204,26 @@ class AutoEditEngine(private val ctx: Context) {
             fc.append("[$cur]subtitles='${ass.absolutePath}':fontsdir='${fonts.absolutePath}'," +
                 "${branding(t, opt.brand, opt.tag, fonts, opt.aiMark)},format=yuv420p[v];")
 
-            // ---- audio: chain + optional music ----
-            val af = AudioChain.build(opt.denoise, opt.voiceClear, opt.pitch)
+            // ---- audio: voice chain + optional background music ----
+            // With music on we mix the voice WITHOUT loudnorm, then loudnorm the
+            // mix at the very end — loudnorm on a crossfaded stream feeding amix
+            // otherwise truncates the output. duration=first keeps voice length.
             if (opt.music) {
+                val afNoLn = AudioChain.build(opt.denoise, opt.voiceClear, opt.pitch, loudnorm = false)
                 val T = if (total > 0) total else 60.0
                 args.addAll(listOf("-f", "lavfi", "-t", "$T", "-i", "sine=frequency=174.61:sample_rate=44100"))
                 args.addAll(listOf("-f", "lavfi", "-t", "$T", "-i", "sine=frequency=261.63:sample_rate=44100"))
                 val iA = countInputs(args) - 2; val iB = countInputs(args) - 1
-                fc.append("[ca]$af[voc];")
-                fc.append("[$iA:a][$iB:a]amix=inputs=2,volume=0.10,lowpass=f=2600[mus];")
-                fc.append("[voc]asplit=2[vout][vsc];")
-                fc.append("[mus][vsc]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=320[musd];")
-                fc.append("[vout][musd]amix=inputs=2:normalize=0,alimiter=limit=0.97[a]")
+                fc.append("[$aComposed]$afNoLn[voc];")
+                fc.append("[$iA:a][$iB:a]amix=inputs=2,volume=0.08,lowpass=f=2600[mus];")
+                fc.append("[voc][mus]amix=inputs=2:duration=first:normalize=0[mixed];")
+                fc.append("[mixed]loudnorm=I=-16:TP=-1.5:LRA=11,alimiter=limit=0.97[a]")
             } else {
-                fc.append("[ca]$af[a]")
+                fc.append("[$aComposed]${AudioChain.build(opt.denoise, opt.voiceClear, opt.pitch)}[a]")
             }
 
             args.addAll(listOf("-filter_complex", fc.toString(), "-map", "[v]", "-map", "[a]",
-                "-s", "${opt.outW}x${opt.outH}",
+                "-s", "${opt.outW}x${opt.outH}", "-shortest",
                 "-r", FPS.toString(), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart",
                 out.absolutePath))

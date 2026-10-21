@@ -19,8 +19,66 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
     var captions: MutableList<Word> = mutableListOf()
     var broll: MutableList<Broll.Placed> = mutableListOf()
     var clips: MutableList<Clip> = mutableListOf()
+    var selectedClip = -1
     var musicOn = false
     var totalSec = 0.0
+
+    // ---- clip thumbnail cache ----
+    private val thumbs = HashMap<String, android.graphics.Bitmap>()
+    private val thumbLoading = HashSet<String>()
+    private val pClipBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeWidth = 2f; color = Color.parseColor("#2A3357") }
+    private val pSel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeWidth = 5f; color = Color.parseColor("#FFC400") }
+
+    private fun ensureThumb(cl: Clip) {
+        val key = cl.path + ":" + cl.srcIn
+        if (thumbs.containsKey(key) || thumbLoading.contains(key)) return
+        thumbLoading.add(key)
+        Thread {
+            val bmp: android.graphics.Bitmap? = try {
+                if (cl.isImage) {
+                    val o = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
+                    android.graphics.BitmapFactory.decodeFile(cl.path, o)
+                } else {
+                    val r = android.media.MediaMetadataRetriever(); r.setDataSource(cl.path)
+                    val f = r.getFrameAtTime((cl.srcIn * 1_000_000).toLong(),
+                        android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC); r.release(); f
+                }
+            } catch (e: Exception) { null }
+            if (bmp != null) {
+                val h = (rowH - 20).toInt().coerceAtLeast(16)
+                val w = (h * bmp.width / bmp.height.coerceAtLeast(1)).coerceIn(16, 400)
+                val s = try { android.graphics.Bitmap.createScaledBitmap(bmp, w, h, true) } catch (e: Exception) { bmp }
+                post { thumbs[key] = s; thumbLoading.remove(key); invalidate() }
+            } else post { thumbLoading.remove(key) }
+        }.start()
+    }
+
+    private fun drawClipBlock(c: Canvas, a: Double, b: Double, top: Float, cl: Clip, idx: Int) {
+        val l = x(a); val r = x(b)
+        if (r < labelW || l > width) return
+        val rect = RectF(max(l, labelW), top + 6, r, top + rowH - 14)
+        ensureThumb(cl)
+        val bmp = thumbs[cl.path + ":" + cl.srcIn]
+        c.save()
+        val clip = android.graphics.Path().apply { addRoundRect(rect, 8f, 8f, android.graphics.Path.Direction.CW) }
+        c.clipPath(clip)
+        if (bmp != null) {
+            var xx = rect.left
+            while (xx < rect.right) { c.drawBitmap(bmp, xx, rect.top, null); xx += bmp.width.toFloat() }
+        } else {
+            c.drawRect(rect, blockPaints[0].let { Paint(Paint.ANTI_ALIAS_FLAG).apply { color = it } })
+        }
+        c.restore()
+        c.drawRoundRect(rect, 8f, 8f, if (idx == selectedClip) pSel else pClipBorder)
+        if (rect.width() > 26) {
+            val tag = (if (cl.isImage) "🖼" else "▶") + "${idx + 1}" + (if (cl.speed != 1.0) " ${cl.speed}x" else "")
+            pTxt.color = Color.WHITE
+            c.save(); c.clipRect(rect)
+            c.drawText(tag, rect.left + 6, rect.top + 22, pTxt); c.restore()
+        }
+    }
     var pxPerSec = 80f
     var onSelect: ((track: Int, index: Int) -> Unit)? = null
     var onSeek: ((Double) -> Unit)? = null
@@ -74,7 +132,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
                         var st = 0.0
                         for ((ci, cl) in clips.withIndex()) {
                             val d = cl.outDur()
-                            drawBlock(c, st, st + d, top, bp, if (cl.isImage) "🖼${ci + 1}" else "▶${ci + 1}")
+                            drawClipBlock(c, st, st + d, top, cl, ci)
                             st += d
                         }
                     }
