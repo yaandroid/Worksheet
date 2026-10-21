@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:background="#0B1020" android:padding="12dp">
 
@@ -14,8 +15,10 @@
 
     <FrameLayout android:layout_width="match_parent" android:layout_height="300dp"
         android:layout_marginTop="6dp" android:background="#000">
-        <VideoView android:id="@+id/vv" android:layout_width="match_parent"
-            android:layout_height="match_parent" android:layout_gravity="center"/>
+        <androidx.media3.ui.PlayerView android:id="@+id/pv"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            app:use_controller="false" app:resize_mode="fit"
+            app:surface_type="texture_view"/>
         <com.brahm.autoeditor.PreviewOverlayView android:id="@+id/ov"
             android:layout_width="match_parent" android:layout_height="match_parent"/>
     </FrameLayout>

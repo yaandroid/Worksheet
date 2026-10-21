@@ -12,6 +12,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
 import com.brahm.autoeditor.databinding.ActivityTimelineBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -20,11 +25,14 @@ import java.io.File
 
 /** CapCut-style multi-clip editor: videos + images on a timeline, per-clip
  *  trim / speed / crop / replace / delete / sort, captions, audio, export. */
+@UnstableApi
 class TimelineActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityTimelineBinding
     private var outputPath: String? = null
     private var selectedClip = -1
+    private var player: ExoPlayer? = null
+    private var offsets = DoubleArray(0)   // composed start time (sec) per clip
 
     // ---- media pickers ----
     private val addVideos = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
@@ -53,11 +61,11 @@ class TimelineActivity : AppCompatActivity() {
         b = ActivityTimelineBinding.inflate(layoutInflater)
         setContentView(b.root)
 
-        Session.inputPath?.let { b.vv.setVideoPath(it); b.vv.seekTo(1) }
         b.ov.lang = Session.opt.lang
+        initPlayer()
         refreshTimeline(); syncPreview()
 
-        b.tl.onSeek = { t -> if (!exported) { b.vv.seekTo((t * 1000).toInt()); b.ov.setTime(t) } }
+        b.tl.onSeek = { t -> if (!exported) seekComposed(t) }
         b.tl.onSelect = { track, index ->
             when (track) { 0 -> { selectClip(index); clipSheet(index) }; 1 -> editCaption(index); 2 -> editBroll(index) }
         }
@@ -99,6 +107,68 @@ class TimelineActivity : AppCompatActivity() {
         else { val d = durationSec(f); Session.clips.add(Clip(path = f, isImage = false, srcIn = 0.0, srcOut = d, srcDur = d, label = "clip")) }
     }
 
+    // ---- composed multi-clip preview (ExoPlayer) ----
+    private fun initPlayer() {
+        val p = ExoPlayer.Builder(this).build()
+        b.pv.player = p
+        p.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                playing = isPlaying; b.btnPlay.text = if (isPlaying) "⏸ Pause" else "▶ Play"
+                if (isPlaying) handler.post(tick)
+            }
+        })
+        player = p
+        buildPlaylist()
+    }
+
+    /** Rebuild the preview playlist from the current clips (videos clipped to
+     *  trim, images shown for their duration). Called after any clip edit. */
+    private fun buildPlaylist() {
+        val p = player ?: return
+        if (exported) return
+        offsets = DoubleArray(Session.clips.size)
+        var acc = 0.0
+        val items = ArrayList<MediaItem>()
+        for ((i, c) in Session.clips.withIndex()) {
+            offsets[i] = acc; acc += c.outDur()
+            val uri = android.net.Uri.fromFile(File(c.path))
+            val mi = if (c.isImage) {
+                MediaItem.Builder().setUri(uri).setMimeType(MimeTypes.IMAGE_JPEG)
+                    .setImageDurationMs((c.imageDur * 1000).toLong()).build()
+            } else {
+                MediaItem.Builder().setUri(uri).setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs((c.srcIn * 1000).toLong())
+                        .setEndPositionMs((c.srcOut * 1000).toLong()).build()).build()
+            }
+            items.add(mi)
+        }
+        if (items.isEmpty()) return
+        val keepIdx = p.currentMediaItemIndex.coerceIn(0, items.size - 1)
+        p.setMediaItems(items); p.prepare(); p.playWhenReady = false
+        try { p.seekTo(keepIdx, 0) } catch (e: Exception) { p.seekTo(0, 0) }
+    }
+
+    private fun composedTime(): Double {
+        val p = player ?: return 0.0
+        if (offsets.isEmpty()) return p.currentPosition / 1000.0
+        val idx = p.currentMediaItemIndex.coerceIn(0, offsets.size - 1)
+        return offsets[idx] + p.currentPosition / 1000.0
+    }
+
+    private fun seekComposed(t: Double) {
+        val p = player ?: return
+        if (exported || offsets.isEmpty()) { p.seekTo((t * 1000).toLong()); b.ov.setTime(t); return }
+        var idx = 0
+        for (i in Session.clips.indices) { if (t + 1e-3 >= offsets[i]) idx = i else break }
+        val within = ((t - offsets[idx]) * 1000).toLong().coerceAtLeast(0)
+        try { p.seekTo(idx, within) } catch (e: Exception) {}
+        b.ov.setTime(t)
+    }
+
+    override fun onDestroy() { super.onDestroy(); player?.release(); player = null }
+    override fun onPause() { super.onPause(); player?.pause() }
+
     // ---- undo / redo (clips + words + options) ----
     private data class Snap(val clips: MutableList<Clip>, val words: MutableList<Word>, val opt: AutoEditEngine.Options)
     private val undoStack = ArrayDeque<Snap>()
@@ -137,13 +207,13 @@ class TimelineActivity : AppCompatActivity() {
             }.setNegativeButton("Band karo", null).show()
     }
 
-    /** Select a clip: highlight on timeline + load it into the preview player. */
+    /** Select a clip: highlight on timeline + jump the preview to its start. */
     private fun selectClip(i: Int) {
         selectedClip = i; b.tl.selectedClip = i; b.tl.invalidate()
-        val c = Session.clips.getOrNull(i) ?: return
-        if (exported) return
-        if (c.isImage) { b.ov.invalidate(); return }
-        try { b.vv.setVideoPath(c.path); b.vv.seekTo((c.srcIn * 1000).toInt().coerceAtLeast(1)) } catch (e: Exception) {}
+        if (exported || i !in Session.clips.indices) return
+        val start = offsets.getOrElse(i) { 0.0 }
+        try { player?.seekTo(i, 0) } catch (e: Exception) {}
+        b.ov.setTime(start); b.tl.seekTo(start)
     }
 
     private fun moveClip(i: Int, dir: Int) {
@@ -356,17 +426,18 @@ class TimelineActivity : AppCompatActivity() {
     private var exported = false
     private val tick = object : Runnable {
         override fun run() {
-            if (!playing) return
-            val t = b.vv.currentPosition / 1000.0
-            if (!exported) { b.ov.setTime(t); b.tl.seekTo(t) }
-            if (b.vv.isPlaying) handler.postDelayed(this, 40) else { playing = false; b.btnPlay.text = "▶ Play" }
+            val p = player ?: return
+            if (!p.isPlaying) { playing = false; b.btnPlay.text = "▶ Play"; return }
+            if (!exported) { val t = composedTime(); b.ov.setTime(t); b.tl.seekTo(t) }
+            handler.postDelayed(this, 40)
         }
     }
     private fun togglePlay() {
-        if (playing) { b.vv.pause(); playing = false; b.btnPlay.text = "▶ Play" }
+        val p = player ?: return
+        if (p.isPlaying) p.pause()
         else {
-            if (!exported) b.vv.seekTo((b.tl.currentTime() * 1000).toInt())
-            b.vv.start(); playing = true; b.btnPlay.text = "⏸ Pause"; handler.post(tick)
+            if (!exported && p.playbackState == Player.STATE_ENDED) p.seekTo(0, 0)
+            p.play()
         }
     }
 
@@ -381,6 +452,7 @@ class TimelineActivity : AppCompatActivity() {
         b.tl.totalSec = Session.totalDur()
         b.tl.invalidate()
         b.ov.words = Session.words; b.ov.keywords = kws; b.ov.invalidate()
+        if (player != null && !exported) buildPlaylist()
     }
 
     private fun durationSec(path: String): Double = try {
@@ -461,7 +533,11 @@ class TimelineActivity : AppCompatActivity() {
                         override fun onDone(o: String) = runOnUiThread {
                             outputPath = o; setBusy(false, "Export ready ✓", 100)
                             exported = true; playing = false; b.ov.visibility = android.view.View.GONE
-                            b.vv.setVideoPath(o); b.vv.start(); b.btnShare.isEnabled = true
+                            player?.let { pl ->
+                                pl.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(File(o))))
+                                pl.prepare(); pl.playWhenReady = true
+                            }
+                            b.btnShare.isEnabled = true
                         }
                         override fun onError(m: String) = runOnUiThread { setBusy(false, "Error: $m", 0) }
                     })

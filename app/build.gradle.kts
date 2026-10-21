@@ -47,6 +47,10 @@ dependencies {
     // resolve, use a community mirror/AAR. See android/README.md.
     implementation("com.antonkarpenko:ffmpeg-kit-full-gpl:2.2.3")
 
+    // Composed multi-clip timeline preview (plays all clips back-to-back + images)
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
+
     // HTTP for Groq Whisper transcription
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
