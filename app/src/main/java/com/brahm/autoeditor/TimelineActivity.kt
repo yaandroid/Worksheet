@@ -71,27 +71,73 @@ class TimelineActivity : AppCompatActivity() {
         }
         b.tl.onEdited = { b.ov.invalidate() }
         b.tl.onEditBegin = { pushUndo() }
-        b.btnZoomIn.setOnClickListener { b.tl.zoomIn() }
-        b.btnZoomOut.setOnClickListener { b.tl.zoomOut() }
+
+        // top bar
+        b.btnCancel.setOnClickListener { finish() }
+        b.btnSaveTop.setOnClickListener { export() }
+        b.spRes.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("720p", "1080p"))
+        b.spRes.setSelection(1)
+
+        // transport
         b.btnPlay.setOnClickListener { togglePlay() }
-        b.btnExport.setOnClickListener { export() }
-        b.btnShare.setOnClickListener { share() }
         b.btnUndo.setOnClickListener { doUndo() }
         b.btnRedo.setOnClickListener { doRedo() }
+        b.btnZoomIn.setOnClickListener { b.tl.zoomIn() }
+        b.btnZoomOut.setOnClickListener { b.tl.zoomOut() }
+        b.btnShare.setOnClickListener { share() }
 
-        b.btnAddVid.setOnClickListener { addVideos.launch("video/*") }
-        b.btnAddImg.setOnClickListener { addImages.launch("image/*") }
+        // contextual clip tools (act on selected clip, else first clip)
+        b.btnSplit.setOnClickListener { curClip()?.let { splitClip(it) } }
+        b.btnReplace.setOnClickListener { curClip()?.let { replaceTarget = it; replacePick.launch("*/*") } }
+        b.btnDelete.setOnClickListener { curClip()?.let { deleteClip(it) } }
+        b.btnCrop.setOnClickListener { curClip()?.let { toggleCrop(it) } }
+        b.btnSpeed.setOnClickListener { curClip()?.let { speedDialog(it) } }
+        b.btnSort.setOnClickListener { curClip()?.let { sortDialog(it) } }
+        b.btnMute.setOnClickListener { curClip()?.let { toggleMute(it) } }
+        b.btnOrigSound.setOnClickListener { curClip()?.let { toggleMute(it) } }
+        b.btnSetCover.setOnClickListener { setCover() }
+        b.btnAdd.setOnClickListener { addMediaChooser() }
 
-        // bottom toolbar — CapCut layout
-        b.btnTTrim.setOnClickListener { if (selectedClip in Session.clips.indices) trimDialog(selectedClip) else Toast.makeText(this, "Pehle timeline me clip tap karo", Toast.LENGTH_SHORT).show() }
+        // bottom main toolbar
+        b.btnTTrim.setOnClickListener { curClip()?.let { trimDialog(it) } }
         b.btnTAudio.setOnClickListener { audioDialog() }
         b.btnTText.setOnClickListener { textDialog() }
         b.btnTAdjust.setOnClickListener { adjustDialog() }
         b.btnTFilter.setOnClickListener { filterDialog() }
         b.btnTFrame.setOnClickListener { frameDialog() }
+    }
 
-        b.spRes.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("720p", "1080p"))
-        b.spRes.setSelection(1)
+    /** The clip the tools act on: the selected one, else the first. */
+    private fun curClip(): Int? {
+        if (Session.clips.isEmpty()) { Toast.makeText(this, "Pehle video/clip add karo", Toast.LENGTH_SHORT).show(); return null }
+        val i = if (selectedClip in Session.clips.indices) selectedClip else 0
+        if (selectedClip !in Session.clips.indices) selectClip(0)
+        return i
+    }
+    private fun addMediaChooser() {
+        AlertDialog.Builder(this).setTitle("Add media")
+            .setItems(arrayOf("🎬 Video (ek ya zyada)", "🖼 Image (ek ya zyada)")) { _, w ->
+                if (w == 0) addVideos.launch("video/*") else addImages.launch("image/*")
+            }.show()
+    }
+    private fun deleteClip(i: Int) {
+        if (Session.clips.size <= 1) { Toast.makeText(this, "Kam se kam 1 clip chahiye", Toast.LENGTH_SHORT).show(); return }
+        pushUndo(); Session.clips.removeAt(i); selectedClip = -1; refreshTimeline()
+    }
+    private fun toggleCrop(i: Int) {
+        val c = Session.clips.getOrNull(i) ?: return
+        pushUndo(); c.fit = !c.fit; refreshTimeline()
+        Toast.makeText(this, if (c.fit) "Fit (pura dikhe)" else "Fill (crop)", Toast.LENGTH_SHORT).show()
+    }
+    private fun toggleMute(i: Int) {
+        val c = Session.clips.getOrNull(i) ?: return
+        val mute = c.volume <= 0.001
+        pushUndo(); c.volume = if (mute) 1.0 else 0.0; refreshTimeline()
+        Toast.makeText(this, if (mute) "Original sound ON" else "Muted", Toast.LENGTH_SHORT).show()
+    }
+    private fun sortDialog(i: Int) {
+        AlertDialog.Builder(this).setTitle("Clip ${i + 1} — move")
+            .setItems(arrayOf("◀ Left", "▶ Right")) { _, w -> moveClip(i, if (w == 0) -1 else 1) }.show()
     }
 
     private fun copyIn(uri: Uri, ext: String): String? = try {
@@ -113,7 +159,7 @@ class TimelineActivity : AppCompatActivity() {
         b.pv.player = p
         p.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                playing = isPlaying; b.btnPlay.text = if (isPlaying) "⏸ Pause" else "▶ Play"
+                playing = isPlaying; b.btnPlay.text = if (isPlaying) "⏸" else "▶"
                 if (isPlaying) handler.post(tick)
             }
         })
@@ -424,11 +470,14 @@ class TimelineActivity : AppCompatActivity() {
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var playing = false
     private var exported = false
+    private fun fmt(sec: Double): String {
+        val s = sec.toInt().coerceAtLeast(0); return "%02d:%02d".format(s / 60, s % 60)
+    }
     private val tick = object : Runnable {
         override fun run() {
             val p = player ?: return
-            if (!p.isPlaying) { playing = false; b.btnPlay.text = "▶ Play"; return }
-            if (!exported) { val t = composedTime(); b.ov.setTime(t); b.tl.seekTo(t) }
+            if (!p.isPlaying) { playing = false; b.btnPlay.text = "▶"; return }
+            if (!exported) { val t = composedTime(); b.ov.setTime(t); b.tl.seekTo(t); b.tvTime.text = "${fmt(t)} / ${fmt(Session.totalDur())}" }
             handler.postDelayed(this, 40)
         }
     }
@@ -546,7 +595,7 @@ class TimelineActivity : AppCompatActivity() {
     }
 
     private fun setBusy(busy: Boolean, step: String, pct: Int) {
-        b.btnExport.isEnabled = !busy; b.progress.progress = pct; b.tvStatus.text = "$step  ($pct%)"
+        b.btnSaveTop.isEnabled = !busy; b.progress.progress = pct; b.tvStatus.text = "$step  ($pct%)"
     }
 
     private fun share() {
