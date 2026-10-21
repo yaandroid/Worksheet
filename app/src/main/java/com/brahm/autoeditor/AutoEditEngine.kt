@@ -31,7 +31,8 @@ class AutoEditEngine(private val ctx: Context) {
         val highlight: String = "",        // override theme highlight colour
         val pip: Boolean = false,          // b-roll fullscreen + speaker circle (PiP)
         val popText: Boolean = false,      // big keyword pop-text (off = no duplicate word)
-        val captionMargin: Int = 430       // caption distance from bottom (position)
+        val captionMargin: Int = 430,      // caption distance from bottom (position)
+        val outW: Int = 1080, val outH: Int = 1920   // export resolution
     )
 
     interface Listener {
@@ -158,6 +159,7 @@ class AutoEditEngine(private val ctx: Context) {
                 args.addAll(listOf("-f", "lavfi", "-t", "$T", "-i", "sine=frequency=261.63:sample_rate=44100"))
             }
             args.addAll(listOf("-filter_complex", fc.toString(), "-map", "[v]", "-map", "[a]",
+                "-s", "${opt.outW}x${opt.outH}",
                 "-r", FPS.toString(), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart",
                 out.absolutePath))

@@ -31,9 +31,8 @@ class TimelineActivity : AppCompatActivity() {
 
         // live preview: raw video + overlay, scrub by dragging timeline
         Session.inputPath?.let { b.vv.setVideoPath(it); b.vv.seekTo(1) }
-        b.ov.theme = Themes.byId(Session.opt.theme)
-        b.ov.brand = Session.opt.brand; b.ov.tag = Session.opt.tag
-        b.ov.popText = Session.opt.popText; b.ov.captionMargin = Session.opt.captionMargin
+        b.ov.lang = Session.opt.lang
+        syncPreview()
         b.tl.onSeek = { t -> if (!exported) { b.vv.seekTo((t * 1000).toInt()); b.ov.setTime(t) } }
 
         b.tl.onSelect = { track, index -> if (track == 1) editCaption(index) else editBroll(index) }
@@ -50,14 +49,38 @@ class TimelineActivity : AppCompatActivity() {
         b.btnTBg.setOnClickListener { bgDialog() }
         b.btnTFx.setOnClickListener { fxDialog() }
         b.btnTTemplate.setOnClickListener { templateDialog() }
+        b.spRes.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("720p", "1080p"))
+        b.spRes.setSelection(1)
+        b.btnUndo.setOnClickListener { doUndo() }
+        b.btnRedo.setOnClickListener { doRedo() }
+        b.tl.onEditBegin = { pushUndo() }
+    }
+
+    // ---- undo / redo ----
+    private val undoStack = ArrayDeque<Pair<MutableList<Word>, AutoEditEngine.Options>>()
+    private val redoStack = ArrayDeque<Pair<MutableList<Word>, AutoEditEngine.Options>>()
+    private fun snap() = Session.words.map { Word(it.s, it.e, it.w) }.toMutableList() to Session.opt
+    private fun pushUndo() { undoStack.addLast(snap()); if (undoStack.size > 40) undoStack.removeFirst(); redoStack.clear() }
+    private fun doUndo() {
+        if (undoStack.isEmpty()) { android.widget.Toast.makeText(this, "Undo khatam", android.widget.Toast.LENGTH_SHORT).show(); return }
+        redoStack.addLast(snap()); val (w, o) = undoStack.removeLast(); Session.words = w; Session.opt = o
+        refreshTimeline(b.tl.totalSec); syncPreview()
+    }
+    private fun doRedo() {
+        if (redoStack.isEmpty()) return
+        undoStack.addLast(snap()); val (w, o) = redoStack.removeLast(); Session.words = w; Session.opt = o
+        refreshTimeline(b.tl.totalSec); syncPreview()
     }
 
     // ---- CapCut-style tool panels (edit Session.opt live) ----
     private fun syncPreview() {
-        b.ov.theme = Themes.byId(Session.opt.theme)
-        b.ov.brand = Session.opt.brand; b.ov.tag = Session.opt.tag
-        b.ov.popText = Session.opt.popText; b.ov.captionMargin = Session.opt.captionMargin
-        b.ov.invalidate(); b.tl.musicOn = Session.opt.music; b.tl.invalidate()
+        val o = Session.opt
+        b.ov.theme = Themes.byId(o.theme)
+        b.ov.brand = o.brand; b.ov.tag = o.tag
+        b.ov.popText = o.popText; b.ov.captionMargin = o.captionMargin
+        b.ov.lang = o.lang; b.ov.fontChoice = o.fontChoice
+        b.ov.highlightOverride = o.highlight; b.ov.textBg = o.textBg; b.ov.textBgColor = o.textBgColor
+        b.ov.invalidate(); b.tl.musicOn = o.music; b.tl.invalidate()
     }
     private fun lbl(t: String) = android.widget.TextView(this).apply { text = t; setTextColor(0xFF9AA6CC.toInt()); setPadding(0, 16, 0, 4) }
     private fun spin(items: List<String>, sel: Int) = android.widget.Spinner(this).apply {
@@ -70,7 +93,7 @@ class TimelineActivity : AppCompatActivity() {
     }
     private fun show(title: String, content: LinearLayout, onOk: () -> Unit) {
         AlertDialog.Builder(this).setTitle(title).setView(androidx.core.widget.NestedScrollView(this).apply { addView(content) })
-            .setPositiveButton("Apply") { _, _ -> onOk(); syncPreview() }.setNegativeButton("Cancel", null).show()
+            .setPositiveButton("Apply") { _, _ -> pushUndo(); onOk(); syncPreview() }.setNegativeButton("Cancel", null).show()
     }
 
     private val fonts = listOf("Default (Poppins)", "Anton", "Bebas Neue")
@@ -193,12 +216,23 @@ class TimelineActivity : AppCompatActivity() {
         box.addView(txt); box.addView(st); box.addView(en)
         AlertDialog.Builder(this).setTitle("Edit caption").setView(box)
             .setPositiveButton("OK") { _, _ ->
+                pushUndo()
                 val s = st.text.toString().toDoubleOrNull() ?: w.s
                 val e = en.text.toString().toDoubleOrNull() ?: w.e
                 Session.words[i] = Word(s, e, txt.text.toString())
-                b.tl.invalidate()
+                b.tl.invalidate(); b.ov.invalidate()
             }
-            .setNegativeButton("Delete") { _, _ -> Session.words.removeAt(i); refreshTimeline(b.tl.totalSec) }
+            .setNeutralButton("Split") { _, _ ->
+                pushUndo()
+                val mid = (w.s + w.e) / 2
+                val parts = w.w.split(" ")
+                val a = if (parts.size > 1) parts.take(parts.size / 2).joinToString(" ") else w.w
+                val bb = if (parts.size > 1) parts.drop(parts.size / 2).joinToString(" ") else w.w
+                Session.words[i] = Word(w.s, mid, a)
+                Session.words.add(i + 1, Word(mid, w.e, bb))
+                refreshTimeline(b.tl.totalSec)
+            }
+            .setNegativeButton("Delete") { _, _ -> pushUndo(); Session.words.removeAt(i); refreshTimeline(b.tl.totalSec) }
             .setNeutralButton("Cancel", null).show()
     }
 
@@ -215,6 +249,8 @@ class TimelineActivity : AppCompatActivity() {
         val input = Session.inputPath ?: return
         val words = Session.words.toList()
         val keywords = Keywords.extract(words)
+        val res = if (b.spRes.selectedItemPosition == 0) 720 to 1280 else 1080 to 1920
+        Session.opt = Session.opt.copy(outW = res.first, outH = res.second)
         setBusy(true, "Starting…", 5)
         lifecycleScope.launch {
             try {

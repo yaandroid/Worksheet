@@ -90,9 +90,11 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
     }
 
     var onEdited: (() -> Unit)? = null
+    var onEditBegin: (() -> Unit)? = null
     private var downX = 0f; private var lastX = 0f; private var dragging = false
     private var mode = 0           // 0 scroll, 1 move block, 2 trim-left, 3 trim-right
     private var blockIdx = -1
+    private var editBegun = false
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.action) {
@@ -117,6 +119,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
                 val dx = e.x - lastX; lastX = e.x
                 if (abs(e.x - downX) > 10) dragging = true
                 if (mode > 0 && blockIdx in captions.indices) {
+                    if (!editBegun) { onEditBegin?.invoke(); editBegun = true }
                     val dt = dx / pxPerSec
                     val w = captions[blockIdx]
                     captions[blockIdx] = when (mode) {
@@ -135,7 +138,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
                     if (blockIdx >= 0) onSelect?.invoke(1, blockIdx)
                     else handleTap(e.x, e.y)
                 }
-                mode = 0; blockIdx = -1
+                mode = 0; blockIdx = -1; editBegun = false
                 return true
             }
         }

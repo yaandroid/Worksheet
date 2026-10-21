@@ -3,8 +3,14 @@
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:background="#0B1020" android:padding="12dp">
 
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="Timeline" android:textColor="#FFC400" android:textSize="18sp" android:textStyle="bold"/>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical">
+        <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:text="Editor" android:textColor="#FFC400" android:textSize="18sp" android:textStyle="bold"/>
+        <Button android:id="@+id/btnUndo" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="↶" android:textColor="#EEF2FF" android:textSize="20sp"/>
+        <Button android:id="@+id/btnRedo" style="?android:attr/buttonBarButtonStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="↷" android:textColor="#EEF2FF" android:textSize="20sp"/>
+        <Spinner android:id="@+id/spRes" android:layout_width="110dp" android:layout_height="wrap_content"/>
+    </LinearLayout>
 
     <FrameLayout android:layout_width="match_parent" android:layout_height="300dp"
         android:layout_marginTop="6dp" android:background="#000">
@@ -42,7 +48,7 @@
     </HorizontalScrollView>
 
     <Button android:id="@+id/btnExport" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:text="⤓ Export (compile)" android:backgroundTint="#FFC400" android:textColor="#1A1300"/>
+        android:layout_height="wrap_content" android:text="💾 Save (export MP4)" android:backgroundTint="#FFC400" android:textColor="#1A1300"/>
     <ProgressBar android:id="@+id/progress" style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100"/>
     <TextView android:id="@+id/tvStatus" android:layout_width="wrap_content"
