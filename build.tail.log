@@ -1,0 +1,77 @@
+Downloading https://services.gradle.org/distributions/gradle-8.9-bin.zip
+............10%.............20%.............30%.............40%.............50%.............60%.............70%.............80%.............90%.............100%
+
+Welcome to Gradle 8.9!
+
+Here are the highlights of this release:
+ - Enhanced Error and Warning Messages
+ - IDE Integration Improvements
+ - Daemon JVM Information
+
+For more details see https://docs.gradle.org/8.9/release-notes.html
+
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.9/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:generateDebugResValues
+> Task :app:dataBindingMergeDependencyArtifactsDebug
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:mergeDebugResources
+> Task :app:parseDebugLocalResources
+> Task :app:checkDebugAarMetadata
+> Task :app:dataBindingGenBaseClassesDebug
+> Task :app:mapDebugSourceSetPaths
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:javaPreCompileDebug
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets
+> Task :app:desugarDebugFileDependencies
+> Task :app:compressDebugAssets
+> Task :app:mergeDebugStartupProfile
+> Task :app:mergeDebugJniLibFolders
+> Task :app:checkDebugDuplicateClasses
+> Task :app:mergeDebugNativeLibs
+> Task :app:mergeLibDexDebug
+> Task :app:processDebugManifestForPackage
+
+> Task :app:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libavcodec.so, libavcodec_neon.so, libavdevice.so, libavdevice_neon.so, libavfilter.so, libavfilter_neon.so, libavformat.so, libavformat_neon.so, libavutil.so, libavutil_neon.so, libc++_shared.so, libffmpegkit.so, libffmpegkit_abidetect.so, libffmpegkit_armv7a_neon.so, libswresample.so, libswresample_neon.so, libswscale.so, libswscale_neon.so, libxeno_native.so.
+
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:processDebugResources
+> Task :app:mergeExtDexDebug
+
+> Task :app:compileDebugKotlin
+w: file:///home/runner/work/Worksheet/Worksheet/app/src/main/java/com/brahm/autoeditor/TimelineActivity.kt:39:13 Unnecessary safe call on a non-null receiver of type List<Uri>
+w: file:///home/runner/work/Worksheet/Worksheet/app/src/main/java/com/brahm/autoeditor/TimelineActivity.kt:40:56 Unnecessary safe call on a non-null receiver of type List<Uri>
+w: file:///home/runner/work/Worksheet/Worksheet/app/src/main/java/com/brahm/autoeditor/TimelineActivity.kt:40:63 Elvis operator (?:) always returns the left operand of non-nullable type Int
+w: file:///home/runner/work/Worksheet/Worksheet/app/src/main/java/com/brahm/autoeditor/TimelineActivity.kt:43:13 Unnecessary safe call on a non-null receiver of type List<Uri>
+w: file:///home/runner/work/Worksheet/Worksheet/app/src/main/java/com/brahm/autoeditor/TimelineActivity.kt:44:56 Unnecessary safe call on a non-null receiver of type List<Uri>
+w: file:///home/runner/work/Worksheet/Worksheet/app/src/main/java/com/brahm/autoeditor/TimelineActivity.kt:44:63 Elvis operator (?:) always returns the left operand of non-nullable type Int
+w: file:///home/runner/work/Worksheet/Worksheet/app/src/main/java/com/brahm/autoeditor/TimelineActivity.kt:494:33 Parameter 'durIgnored' is never used
+w: file:///home/runner/work/Worksheet/Worksheet/app/src/main/java/com/brahm/autoeditor/TimelineActivity.kt:583:45 The corresponding parameter in the supertype 'Listener' is named 'outputPath'. This may cause problems when calling this function with named arguments.
+w: file:///home/runner/work/Worksheet/Worksheet/app/src/main/java/com/brahm/autoeditor/TimelineActivity.kt:592:46 The corresponding parameter in the supertype 'Listener' is named 'message'. This may cause problems when calling this function with named arguments.
+
+> Task :app:compileDebugJavaWithJavac
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics
+> Task :app:processDebugJavaRes
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJavaResource
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+
+BUILD SUCCESSFUL in 1m 43s
+40 actionable tasks: 40 executed
