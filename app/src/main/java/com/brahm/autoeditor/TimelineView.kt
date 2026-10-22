@@ -30,6 +30,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
         style = Paint.Style.STROKE; strokeWidth = 2f; color = Color.parseColor("#2A3357") }
     private val pSel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE; strokeWidth = 5f; color = Color.parseColor("#FFC400") }
+    private val pHandle = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FFC400") }
 
     private fun ensureThumb(cl: Clip) {
         val key = cl.path + ":" + cl.srcIn
@@ -72,11 +73,17 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
         }
         c.restore()
         c.drawRoundRect(rect, 8f, 8f, if (idx == selectedClip) pSel else pClipBorder)
+        if (idx == selectedClip) {
+            // white trim handles (drag to trim)
+            val hw = 10f
+            c.drawRoundRect(RectF(rect.left, rect.top, rect.left + hw, rect.bottom), 4f, 4f, pHandle)
+            c.drawRoundRect(RectF(rect.right - hw, rect.top, rect.right, rect.bottom), 4f, 4f, pHandle)
+        }
         if (rect.width() > 26) {
             val tag = (if (cl.isImage) "🖼" else "▶") + "${idx + 1}" + (if (cl.speed != 1.0) " ${cl.speed}x" else "")
             pTxt.color = Color.WHITE
             c.save(); c.clipRect(rect)
-            c.drawText(tag, rect.left + 6, rect.top + 22, pTxt); c.restore()
+            c.drawText(tag, rect.left + 16, rect.top + 22, pTxt); c.restore()
         }
     }
     var pxPerSec = 80f
@@ -160,16 +167,27 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
 
     var onEdited: (() -> Unit)? = null
     var onEditBegin: (() -> Unit)? = null
+    var onClipTrimmed: (() -> Unit)? = null
     private var downX = 0f; private var lastX = 0f; private var dragging = false
     private var mode = 0           // 0 scroll, 1 move block, 2 trim-left, 3 trim-right
     private var blockIdx = -1
+    private var clipMode = 0       // 0 none, 2 trim selected clip left, 3 trim right
     private var editBegun = false
+
+    /** start x (sec) of a clip on the composed timeline */
+    private fun clipStart(idx: Int): Double { var s = 0.0; for (i in 0 until idx) s += clips[i].outDur(); return s }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.action) {
             MotionEvent.ACTION_DOWN -> {
-                downX = e.x; lastX = e.x; dragging = false; mode = 0; blockIdx = -1
+                downX = e.x; lastX = e.x; dragging = false; mode = 0; blockIdx = -1; clipMode = 0
                 val ri = ((e.y - 30f) / rowH).toInt()
+                if (ri == 0 && selectedClip in clips.indices) {
+                    val st = clipStart(selectedClip); val d = clips[selectedClip].outDur()
+                    val lx = x(st); val rx = x(st + d)
+                    if (abs(e.x - lx) < 42 && e.x > labelW) clipMode = 2
+                    else if (abs(e.x - rx) < 42) clipMode = 3
+                }
                 if (ri == 1) {
                     val t = ((e.x - labelW + scrollX) / pxPerSec).toDouble()
                     blockIdx = captions.indexOfFirst { t >= it.s && t <= it.e }
@@ -187,7 +205,22 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
             MotionEvent.ACTION_MOVE -> {
                 val dx = e.x - lastX; lastX = e.x
                 if (abs(e.x - downX) > 10) dragging = true
-                if (mode > 0 && blockIdx in captions.indices) {
+                if (clipMode > 0 && selectedClip in clips.indices) {
+                    if (!editBegun) { onEditBegin?.invoke(); editBegun = true }
+                    val cl = clips[selectedClip]
+                    val dtDisp = dx / pxPerSec
+                    if (cl.isImage) {
+                        if (clipMode == 3) cl.imageDur = (cl.imageDur + dtDisp).coerceIn(0.3, 30.0)
+                    } else {
+                        val dtSrc = dtDisp * cl.speed
+                        if (clipMode == 2) cl.srcIn = (cl.srcIn + dtSrc).coerceIn(0.0, cl.srcOut - 0.2)
+                        else {
+                            val hi = if (cl.srcDur > 0) cl.srcDur else cl.srcOut + dtSrc
+                            cl.srcOut = (cl.srcOut + dtSrc).coerceIn(cl.srcIn + 0.2, hi)
+                        }
+                    }
+                    invalidate(); onEdited?.invoke()
+                } else if (mode > 0 && blockIdx in captions.indices) {
                     if (!editBegun) { onEditBegin?.invoke(); editBegun = true }
                     val dt = dx / pxPerSec
                     val w = captions[blockIdx]
@@ -203,11 +236,13 @@ class TimelineView @JvmOverloads constructor(ctx: Context, a: AttributeSet? = nu
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                val wasClipTrim = clipMode > 0 && dragging
                 if (!dragging) {
                     if (blockIdx >= 0) onSelect?.invoke(1, blockIdx)
                     else handleTap(e.x, e.y)
                 }
-                mode = 0; blockIdx = -1; editBegun = false
+                mode = 0; blockIdx = -1; clipMode = 0; editBegun = false
+                if (wasClipTrim) onClipTrimmed?.invoke()
                 return true
             }
         }

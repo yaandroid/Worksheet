@@ -71,6 +71,7 @@ class TimelineActivity : AppCompatActivity() {
         }
         b.tl.onEdited = { b.ov.invalidate() }
         b.tl.onEditBegin = { pushUndo() }
+        b.tl.onClipTrimmed = { refreshTimeline() }
 
         // top bar
         b.btnCancel.setOnClickListener { finish() }
